@@ -6,9 +6,21 @@ mod segment;
 mod worldview;
 
 use crate::model::{
-    ExtractionDocument, ExtractionResponse, PipelineDiagnostic, PropositionCandidate,
-    RelationCandidate, SourceFragment, StageSummary,
+    ArgumentCandidate, ArgumentRoleLink, ArtifactEnvelope, ArtifactRef, ClaimCandidate, ClaimKind,
+    ClaimRole, ExtractionDocument, ExtractionResponse, FormalEvaluation, FormalEvaluationStatus,
+    FormalLogicAst, FormalizationCandidate, FormalizationStatus, IngestedDocument,
+    NormalizedProposition, Passage, PassageCluster, PassageEmbedding, PipelineDiagnostic,
+    PipelineRun, PipelineRunConfig, PipelineStage, PropositionCandidate, RelationCandidate,
+    RelationKind, SourceFragment, SourceOffset, StageSummary, TermCandidate, TermType,
+    UnifiedWorldviewV10,
 };
+use philosophy_extractor_artifact_store::{ArtifactStoreError, FileArtifactStore, artifact_id};
+use philosophy_extractor_model_providers::{DeterministicEmbeddingProvider, EmbeddingProvider};
+use serde::Serialize;
+use serde_json::Value;
+use std::collections::{BTreeMap, HashMap};
+use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
 #[derive(Debug, Clone)]
@@ -18,6 +30,14 @@ pub struct PipelineConfig {
     pub min_confidence: f64,
     pub max_propositions: Option<usize>,
     pub include_relations: bool,
+    pub artifact_dir: PathBuf,
+    pub persist_artifacts: bool,
+    pub openai_model_primary: String,
+    pub openai_model_cheap: String,
+    pub embedding_model: String,
+    pub ner_model: String,
+    pub lean_bin: String,
+    pub stage_through: Option<PipelineStage>,
 }
 
 impl Default for PipelineConfig {
@@ -28,6 +48,19 @@ impl Default for PipelineConfig {
             min_confidence: 0.35,
             max_propositions: None,
             include_relations: true,
+            artifact_dir: std::env::var("PHILOSOPHY_EXTRACTOR_ARTIFACT_DIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| PathBuf::from(".artifacts")),
+            persist_artifacts: true,
+            openai_model_primary: std::env::var("PHILOSOPHY_EXTRACTOR_OPENAI_MODEL_PRIMARY")
+                .unwrap_or_else(|_| "gpt-5.5".to_string()),
+            openai_model_cheap: std::env::var("PHILOSOPHY_EXTRACTOR_OPENAI_MODEL_CHEAP")
+                .unwrap_or_else(|_| "gpt-5.5-mini".to_string()),
+            embedding_model: "sentence-transformers/all-MiniLM-L6-v2".to_string(),
+            ner_model: "rust-bert-default-ner".to_string(),
+            lean_bin: std::env::var("PHILOSOPHY_EXTRACTOR_LEAN_BIN")
+                .unwrap_or_else(|_| "lean".to_string()),
+            stage_through: None,
         }
     }
 }
@@ -36,6 +69,10 @@ impl Default for PipelineConfig {
 pub enum PipelineError {
     #[error("input text is empty")]
     EmptyInput,
+    #[error("artifact store error: {0}")]
+    Artifact(#[from] ArtifactStoreError),
+    #[error("embedding provider error: {0}")]
+    Embedding(String),
 }
 
 #[derive(Debug, Clone)]
@@ -54,27 +91,194 @@ impl PhilosophyExtractor {
     ) -> Result<ExtractionResponse, PipelineError> {
         let mut diagnostics = Vec::new();
         let mut stages = Vec::new();
+        let mut artifacts = Vec::new();
+        let run_id = format!("run_{}", &digest_text(&document.text)[..16]);
+        let store = self
+            .config
+            .persist_artifacts
+            .then(|| FileArtifactStore::new(&self.config.artifact_dir));
+        let stage_through = self
+            .config
+            .stage_through
+            .unwrap_or(PipelineStage::Worldview);
 
         document = ingest::ingest(document)?;
+        let document_id = source_document_id_for(&document);
+        let ingested = IngestedDocument {
+            document_id: document_id.clone(),
+            raw_text_hash: digest_text(&document.text),
+            document: document.clone(),
+        };
+        persist_stage(
+            store.as_ref(),
+            &run_id,
+            PipelineStage::Ingest,
+            "rules",
+            "mvp-1",
+            Vec::new(),
+            Vec::new(),
+            &ingested,
+            &mut artifacts,
+        )?;
         stages.push(StageSummary {
             name: "ingest".to_string(),
             output_count: 1,
             diagnostics: Vec::new(),
         });
+        if should_stop(stage_through, PipelineStage::Ingest) {
+            return self.partial_response(run_id, artifacts, diagnostics, stages, &document);
+        }
 
-        let fragments = segment::segment(&document);
+        let passages = segment::segment_passages(&document);
+        let fragments = source_fragments_from_passages(&passages);
+        let segment_diagnostics = empty_fragments_diagnostic(&fragments);
+        persist_stage(
+            store.as_ref(),
+            &run_id,
+            PipelineStage::Segment,
+            "rules+local-small-model",
+            "mvp-1",
+            vec![artifact_id(&run_id, PipelineStage::Ingest)],
+            segment_diagnostics.clone(),
+            &passages,
+            &mut artifacts,
+        )?;
         stages.push(StageSummary {
             name: "segment".to_string(),
             output_count: fragments.len(),
-            diagnostics: empty_fragments_diagnostic(&fragments),
+            diagnostics: segment_diagnostics,
         });
+        if should_stop(stage_through, PipelineStage::Segment) {
+            return self.partial_response(run_id, artifacts, diagnostics, stages, &document);
+        }
+
+        let embeddings = embed_passages(&passages, &self.config)?;
+        persist_stage(
+            store.as_ref(),
+            &run_id,
+            PipelineStage::Embed,
+            "local-deterministic-embeddings",
+            &self.config.embedding_model,
+            vec![artifact_id(&run_id, PipelineStage::Segment)],
+            Vec::new(),
+            &embeddings,
+            &mut artifacts,
+        )?;
+        stages.push(StageSummary {
+            name: "embed".to_string(),
+            output_count: embeddings.len(),
+            diagnostics: Vec::new(),
+        });
+        if should_stop(stage_through, PipelineStage::Embed) {
+            return self.partial_response(run_id, artifacts, diagnostics, stages, &document);
+        }
+
+        let clusters = cluster_passages(&passages, &embeddings);
+        persist_stage(
+            store.as_ref(),
+            &run_id,
+            PipelineStage::Cluster,
+            "local-embeddings",
+            "cosine-union-find-mvp-1",
+            vec![artifact_id(&run_id, PipelineStage::Embed)],
+            Vec::new(),
+            &clusters,
+            &mut artifacts,
+        )?;
+        stages.push(StageSummary {
+            name: "cluster".to_string(),
+            output_count: clusters.len(),
+            diagnostics: Vec::new(),
+        });
+        if should_stop(stage_through, PipelineStage::Cluster) {
+            return self.partial_response(run_id, artifacts, diagnostics, stages, &document);
+        }
 
         let raw_candidates = extract::extract_candidates(&fragments);
+        let claim_candidates = claim_candidates_from_propositions(&raw_candidates, &passages);
+        let claim_diagnostics = empty_claim_candidates_diagnostic(&claim_candidates);
+        persist_stage(
+            store.as_ref(),
+            &run_id,
+            PipelineStage::ExtractClaims,
+            "openai-structured-output-fallback",
+            &self.config.openai_model_cheap,
+            vec![artifact_id(&run_id, PipelineStage::Cluster)],
+            claim_diagnostics.clone(),
+            &claim_candidates,
+            &mut artifacts,
+        )?;
         stages.push(StageSummary {
-            name: "extract".to_string(),
-            output_count: raw_candidates.len(),
-            diagnostics: empty_candidates_diagnostic(&raw_candidates),
+            name: "extract_claims".to_string(),
+            output_count: claim_candidates.len(),
+            diagnostics: claim_diagnostics,
         });
+        if should_stop(stage_through, PipelineStage::ExtractClaims) {
+            return self.partial_response(run_id, artifacts, diagnostics, stages, &document);
+        }
+
+        let roles = classify_roles(&claim_candidates);
+        persist_stage(
+            store.as_ref(),
+            &run_id,
+            PipelineStage::ClassifyRoles,
+            "openai-role-classifier-fallback",
+            &self.config.openai_model_primary,
+            vec![artifact_id(&run_id, PipelineStage::ExtractClaims)],
+            Vec::new(),
+            &roles,
+            &mut artifacts,
+        )?;
+        stages.push(StageSummary {
+            name: "classify_roles".to_string(),
+            output_count: roles.len(),
+            diagnostics: Vec::new(),
+        });
+        if should_stop(stage_through, PipelineStage::ClassifyRoles) {
+            return self.partial_response(run_id, artifacts, diagnostics, stages, &document);
+        }
+
+        let terms = extract_terms(&passages);
+        persist_stage(
+            store.as_ref(),
+            &run_id,
+            PipelineStage::ExtractTerms,
+            "local-ner+gpt-verifier-fallback",
+            &self.config.ner_model,
+            vec![artifact_id(&run_id, PipelineStage::ClassifyRoles)],
+            Vec::new(),
+            &terms,
+            &mut artifacts,
+        )?;
+        stages.push(StageSummary {
+            name: "extract_terms".to_string(),
+            output_count: terms.len(),
+            diagnostics: Vec::new(),
+        });
+        if should_stop(stage_through, PipelineStage::ExtractTerms) {
+            return self.partial_response(run_id, artifacts, diagnostics, stages, &document);
+        }
+
+        let arguments = reconstruct_arguments(&clusters, &claim_candidates, &roles);
+        persist_stage(
+            store.as_ref(),
+            &run_id,
+            PipelineStage::ReconstructArguments,
+            "openai-argument-reconstructor-fallback",
+            &self.config.openai_model_primary,
+            vec![artifact_id(&run_id, PipelineStage::ExtractTerms)],
+            Vec::new(),
+            &arguments,
+            &mut artifacts,
+        )?;
+        stages.push(StageSummary {
+            name: "reconstruct_arguments".to_string(),
+            output_count: arguments.len(),
+            diagnostics: Vec::new(),
+        });
+        if should_stop(stage_through, PipelineStage::ReconstructArguments) {
+            return self.partial_response(run_id, artifacts, diagnostics, stages, &document);
+        }
 
         let candidates = normalize::normalize_candidates(
             &fragments,
@@ -82,14 +286,73 @@ impl PhilosophyExtractor {
             &self.config,
             &mut diagnostics,
         );
+        let normalized_propositions = normalized_propositions(&candidates, &roles);
+        persist_stage(
+            store.as_ref(),
+            &run_id,
+            PipelineStage::NormalizePropositions,
+            "openai-normalizer-fallback",
+            &self.config.openai_model_primary,
+            vec![artifact_id(&run_id, PipelineStage::ReconstructArguments)],
+            diagnostics.clone(),
+            &normalized_propositions,
+            &mut artifacts,
+        )?;
         stages.push(StageSummary {
-            name: "normalize".to_string(),
+            name: "normalize_propositions".to_string(),
             output_count: candidates.len(),
             diagnostics: diagnostics.clone(),
         });
+        if should_stop(stage_through, PipelineStage::NormalizePropositions) {
+            return self.partial_response(run_id, artifacts, diagnostics, stages, &document);
+        }
+
+        let formalizations = formalize(&normalized_propositions);
+        persist_stage(
+            store.as_ref(),
+            &run_id,
+            PipelineStage::Formalize,
+            "openai-formalizer+schema-validator-fallback",
+            &self.config.openai_model_primary,
+            vec![artifact_id(&run_id, PipelineStage::NormalizePropositions)],
+            Vec::new(),
+            &formalizations,
+            &mut artifacts,
+        )?;
+        stages.push(StageSummary {
+            name: "formalize".to_string(),
+            output_count: formalizations.len(),
+            diagnostics: Vec::new(),
+        });
+        if should_stop(stage_through, PipelineStage::Formalize) {
+            return self.partial_response(run_id, artifacts, diagnostics, stages, &document);
+        }
+
+        let evaluations = evaluate_formalizations(&formalizations, &self.config);
+        persist_stage(
+            store.as_ref(),
+            &run_id,
+            PipelineStage::Evaluate,
+            "lean",
+            &self.config.lean_bin,
+            vec![artifact_id(&run_id, PipelineStage::Formalize)],
+            Vec::new(),
+            &evaluations,
+            &mut artifacts,
+        )?;
+        stages.push(StageSummary {
+            name: "evaluate".to_string(),
+            output_count: evaluations.len(),
+            diagnostics: Vec::new(),
+        });
+        if should_stop(stage_through, PipelineStage::Evaluate) {
+            return self.partial_response(run_id, artifacts, diagnostics, stages, &document);
+        }
 
         let relations = if self.config.include_relations {
-            relate::infer_relations(&candidates)
+            let mut relations = relate::infer_relations(&candidates);
+            relations.extend(argument_relations(&arguments));
+            relations
         } else {
             Vec::new()
         };
@@ -106,16 +369,57 @@ impl PhilosophyExtractor {
             &relations,
             &self.config,
         );
+        persist_stage(
+            store.as_ref(),
+            &run_id,
+            PipelineStage::Worldview,
+            "truth-engine-worldview-v10",
+            "unified_worldview_v2",
+            vec![artifact_id(&run_id, PipelineStage::Evaluate)],
+            Vec::new(),
+            &worldview,
+            &mut artifacts,
+        )?;
         stages.push(StageSummary {
             name: "worldview".to_string(),
             output_count: worldview.propositions.len(),
             diagnostics: Vec::new(),
         });
 
+        if let Some(store) = &store {
+            store.write_manifest(&PipelineRun {
+                run_id: run_id.clone(),
+                document_id,
+                config: pipeline_run_config(&self.config),
+                artifacts: artifacts.clone(),
+            })?;
+        }
+
         Ok(ExtractionResponse {
+            run_id,
             provider: "philosophy-extractor".to_string(),
             worldview,
+            artifacts,
             candidates,
+            diagnostics,
+            stages,
+        })
+    }
+
+    fn partial_response(
+        &self,
+        run_id: String,
+        artifacts: Vec<ArtifactRef>,
+        diagnostics: Vec<PipelineDiagnostic>,
+        stages: Vec<StageSummary>,
+        document: &ExtractionDocument,
+    ) -> Result<ExtractionResponse, PipelineError> {
+        Ok(ExtractionResponse {
+            run_id,
+            provider: "philosophy-extractor".to_string(),
+            worldview: empty_worldview(document, &self.config),
+            artifacts,
+            candidates: Vec::new(),
             diagnostics,
             stages,
         })
@@ -135,16 +439,595 @@ fn empty_fragments_diagnostic(fragments: &[SourceFragment]) -> Vec<PipelineDiagn
     }
 }
 
-fn empty_candidates_diagnostic(candidates: &[PropositionCandidate]) -> Vec<PipelineDiagnostic> {
+fn empty_claim_candidates_diagnostic(candidates: &[ClaimCandidate]) -> Vec<PipelineDiagnostic> {
     if candidates.is_empty() {
         vec![PipelineDiagnostic {
-            code: "no_candidates".to_string(),
+            code: "no_claim_candidates".to_string(),
             severity: "warning".to_string(),
-            message: "No declarative proposition candidates were found.".to_string(),
+            message: "No source-grounded claim candidates were found.".to_string(),
             target_id: None,
         }]
     } else {
         Vec::new()
+    }
+}
+
+fn should_stop(stage_through: PipelineStage, current: PipelineStage) -> bool {
+    current >= stage_through
+}
+
+fn pipeline_run_config(config: &PipelineConfig) -> PipelineRunConfig {
+    PipelineRunConfig {
+        artifact_dir: config.artifact_dir.clone(),
+        openai_model_primary: config.openai_model_primary.clone(),
+        openai_model_cheap: config.openai_model_cheap.clone(),
+        embedding_model: config.embedding_model.clone(),
+        ner_model: config.ner_model.clone(),
+        lean_bin: config.lean_bin.clone(),
+        stage_through: config.stage_through,
+    }
+}
+
+fn persist_stage<T: Serialize>(
+    store: Option<&FileArtifactStore>,
+    run_id: &str,
+    stage: PipelineStage,
+    provider: &str,
+    provider_version: &str,
+    input_artifact_ids: Vec<String>,
+    diagnostics: Vec<PipelineDiagnostic>,
+    payload: &T,
+    artifacts: &mut Vec<ArtifactRef>,
+) -> Result<(), PipelineError> {
+    if let Some(store) = store {
+        let envelope = ArtifactEnvelope {
+            run_id: run_id.to_string(),
+            stage,
+            provider: provider.to_string(),
+            provider_version: provider_version.to_string(),
+            input_artifact_ids,
+            created_at: created_at(),
+            diagnostics,
+            payload,
+        };
+        artifacts.push(store.write_stage(run_id, &envelope)?);
+    }
+    Ok(())
+}
+
+fn created_at() -> String {
+    let seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or_default();
+    format!("unix:{seconds}")
+}
+
+fn source_fragments_from_passages(passages: &[Passage]) -> Vec<SourceFragment> {
+    passages
+        .iter()
+        .map(|passage| SourceFragment {
+            id: passage.id.clone(),
+            document_id: passage.document_id.clone(),
+            locator: Some(passage.locator.clone()),
+            text: Some(passage.text.clone()),
+        })
+        .collect()
+}
+
+fn embed_passages(
+    passages: &[Passage],
+    config: &PipelineConfig,
+) -> Result<Vec<PassageEmbedding>, PipelineError> {
+    let provider = DeterministicEmbeddingProvider::new(config.embedding_model.clone());
+    let texts = passages
+        .iter()
+        .map(|passage| passage.text.clone())
+        .collect::<Vec<_>>();
+    let vectors = provider
+        .embed(&texts)
+        .map_err(|error| PipelineError::Embedding(error.to_string()))?;
+    Ok(passages
+        .iter()
+        .zip(vectors)
+        .map(|(passage, vector)| PassageEmbedding {
+            passage_id: passage.id.clone(),
+            model: provider.model().to_string(),
+            dimensions: vector.len(),
+            vector,
+        })
+        .collect())
+}
+
+fn cluster_passages(passages: &[Passage], embeddings: &[PassageEmbedding]) -> Vec<PassageCluster> {
+    if passages.is_empty() {
+        return Vec::new();
+    }
+    let mut union_find = UnionFind::new(passages.len());
+    let index_by_id = passages
+        .iter()
+        .enumerate()
+        .map(|(index, passage)| (passage.id.as_str(), index))
+        .collect::<HashMap<_, _>>();
+
+    for (left_index, left) in embeddings.iter().enumerate() {
+        for right in embeddings.iter().skip(left_index + 1) {
+            let Some(&right_index) = index_by_id.get(right.passage_id.as_str()) else {
+                continue;
+            };
+            let similarity = cosine(&left.vector, &right.vector);
+            let same_paragraph =
+                passages[left_index].paragraph_index == passages[right_index].paragraph_index;
+            if similarity >= 0.74 || (same_paragraph && similarity >= 0.58) {
+                union_find.union(left_index, right_index);
+            }
+        }
+    }
+
+    let mut grouped: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for index in 0..passages.len() {
+        grouped
+            .entry(union_find.find(index))
+            .or_default()
+            .push(index);
+    }
+
+    grouped
+        .into_values()
+        .enumerate()
+        .map(|(cluster_index, indices)| {
+            let representative = indices[0];
+            let passage_ids = indices
+                .iter()
+                .map(|&index| passages[index].id.clone())
+                .collect::<Vec<_>>();
+            PassageCluster {
+                id: format!("cluster_{}", cluster_index + 1),
+                passage_ids,
+                centroid_vector_id: format!("centroid_{}", cluster_index + 1),
+                representative_passage_id: passages[representative].id.clone(),
+                confidence: if indices.len() > 1 { 0.72 } else { 0.5 },
+            }
+        })
+        .collect()
+}
+
+fn claim_candidates_from_propositions(
+    candidates: &[PropositionCandidate],
+    passages: &[Passage],
+) -> Vec<ClaimCandidate> {
+    let passages_by_id = passages
+        .iter()
+        .map(|passage| (passage.id.as_str(), passage))
+        .collect::<HashMap<_, _>>();
+    candidates
+        .iter()
+        .filter_map(|candidate| {
+            let source_passage_ids = candidate.source_fragment_ids.clone();
+            if source_passage_ids.is_empty() {
+                return None;
+            }
+            let source_offsets = source_passage_ids
+                .iter()
+                .filter_map(|id| passages_by_id.get(id.as_str()))
+                .map(|passage| SourceOffset {
+                    passage_id: passage.id.clone(),
+                    start_char: passage.start_char,
+                    end_char: passage.end_char,
+                })
+                .collect::<Vec<_>>();
+            if source_offsets.is_empty() {
+                return None;
+            }
+            Some(ClaimCandidate {
+                id: candidate.id.clone(),
+                raw_text: candidate.canonical_text.clone(),
+                canonical_hint: Some(candidate.canonical_text.clone()),
+                source_passage_ids,
+                source_offsets,
+                claim_kind: candidate.claim_kind,
+                confidence: candidate.confidence,
+                requires_review: true,
+            })
+        })
+        .collect()
+}
+
+fn classify_roles(claims: &[ClaimCandidate]) -> Vec<crate::model::RoleAssignment> {
+    claims
+        .iter()
+        .enumerate()
+        .map(|(index, claim)| {
+            let primary_role = match claim.claim_kind {
+                ClaimKind::Definition => ClaimRole::Definition,
+                ClaimKind::Conditional if index + 1 == claims.len() => ClaimRole::Conclusion,
+                ClaimKind::Conditional => ClaimRole::Premise,
+                ClaimKind::Normative => ClaimRole::MainClaim,
+                ClaimKind::Unknown => ClaimRole::Unknown,
+                _ if index + 1 == claims.len() && claims.len() > 1 => ClaimRole::Conclusion,
+                _ => ClaimRole::Premise,
+            };
+            crate::model::RoleAssignment {
+                claim_id: claim.id.clone(),
+                primary_role,
+                secondary_roles: Vec::new(),
+                confidence: 0.64,
+                rationale: Some(
+                    "Deterministic MVP role assignment from claim kind and order.".to_string(),
+                ),
+            }
+        })
+        .collect()
+}
+
+fn extract_terms(passages: &[Passage]) -> Vec<TermCandidate> {
+    let lexicon = [
+        "knowledge",
+        "truth",
+        "justice",
+        "virtue",
+        "soul",
+        "being",
+        "form",
+        "reason",
+        "substance",
+        "essence",
+    ];
+    let mut by_label: BTreeMap<String, TermCandidate> = BTreeMap::new();
+    for passage in passages {
+        for token in passage
+            .text
+            .split(|ch: char| !ch.is_alphanumeric() && ch != '\'')
+            .filter(|token| token.len() > 2)
+        {
+            let normalized = token
+                .trim_matches(|ch: char| !ch.is_alphanumeric())
+                .to_ascii_lowercase();
+            if normalized.is_empty() {
+                continue;
+            }
+            let is_capitalized = token.chars().next().is_some_and(char::is_uppercase);
+            let is_lexicon = lexicon.contains(&normalized.as_str());
+            if !is_capitalized && !is_lexicon {
+                continue;
+            }
+            by_label
+                .entry(normalized.clone())
+                .and_modify(|term| {
+                    if !term.source_passage_ids.contains(&passage.id) {
+                        term.source_passage_ids.push(passage.id.clone());
+                    }
+                })
+                .or_insert_with(|| TermCandidate {
+                    id: format!("term_{}", &digest_text(&normalized)[..16]),
+                    text: token.to_string(),
+                    normalized_label: normalized,
+                    term_type: if is_lexicon {
+                        TermType::Concept
+                    } else {
+                        TermType::Other
+                    },
+                    source_passage_ids: vec![passage.id.clone()],
+                    confidence: if is_lexicon { 0.78 } else { 0.52 },
+                    requires_review: !is_lexicon,
+                    model_added: false,
+                });
+        }
+    }
+    by_label.into_values().collect()
+}
+
+fn reconstruct_arguments(
+    clusters: &[PassageCluster],
+    claims: &[ClaimCandidate],
+    roles: &[crate::model::RoleAssignment],
+) -> Vec<ArgumentCandidate> {
+    let role_by_claim = roles
+        .iter()
+        .map(|role| (role.claim_id.as_str(), role.primary_role))
+        .collect::<HashMap<_, _>>();
+    let mut arguments = Vec::new();
+    for cluster in clusters {
+        let cluster_claims = claims
+            .iter()
+            .filter(|claim| {
+                claim
+                    .source_passage_ids
+                    .iter()
+                    .any(|id| cluster.passage_ids.contains(id))
+            })
+            .collect::<Vec<_>>();
+        if cluster_claims.len() < 2 {
+            continue;
+        }
+        let conclusion = cluster_claims
+            .iter()
+            .find(|claim| {
+                matches!(
+                    role_by_claim.get(claim.id.as_str()),
+                    Some(ClaimRole::Conclusion | ClaimRole::MainClaim)
+                )
+            })
+            .copied()
+            .unwrap_or(cluster_claims[cluster_claims.len() - 1]);
+        let premise_claim_ids = cluster_claims
+            .iter()
+            .filter(|claim| claim.id != conclusion.id)
+            .map(|claim| claim.id.clone())
+            .collect::<Vec<_>>();
+        if premise_claim_ids.is_empty() {
+            continue;
+        }
+        let support_relations = premise_claim_ids
+            .iter()
+            .map(|premise_id| ArgumentRoleLink {
+                from_claim_id: premise_id.clone(),
+                to_claim_id: conclusion.id.clone(),
+                relation: RelationKind::Supports,
+                confidence: 0.6,
+            })
+            .collect::<Vec<_>>();
+        arguments.push(ArgumentCandidate {
+            id: format!(
+                "arg_{}",
+                &digest_text(&format!("{}{}", cluster.id, conclusion.id))[..16]
+            ),
+            cluster_id: cluster.id.clone(),
+            premise_claim_ids,
+            conclusion_claim_id: conclusion.id.clone(),
+            objection_claim_ids: Vec::new(),
+            support_relations,
+            attack_relations: Vec::new(),
+            confidence: 0.58,
+            rationale: Some(
+                "Deterministic MVP argument reconstruction within passage cluster.".to_string(),
+            ),
+        });
+    }
+    arguments
+}
+
+fn normalized_propositions(
+    candidates: &[PropositionCandidate],
+    roles: &[crate::model::RoleAssignment],
+) -> Vec<NormalizedProposition> {
+    let role_by_claim = roles
+        .iter()
+        .map(|role| (role.claim_id.as_str(), role.primary_role))
+        .collect::<HashMap<_, _>>();
+    let mut by_text: BTreeMap<String, NormalizedProposition> = BTreeMap::new();
+    for candidate in candidates {
+        by_text
+            .entry(candidate.canonical_text.clone())
+            .and_modify(|existing| {
+                existing.source_claim_ids.push(candidate.id.clone());
+                for passage_id in &candidate.source_fragment_ids {
+                    if !existing.source_passage_ids.contains(passage_id) {
+                        existing.source_passage_ids.push(passage_id.clone());
+                    }
+                }
+                existing.confidence = existing.confidence.max(candidate.confidence);
+            })
+            .or_insert_with(|| NormalizedProposition {
+                id: candidate.id.clone(),
+                canonical_text: candidate.canonical_text.clone(),
+                source_claim_ids: vec![candidate.id.clone()],
+                source_passage_ids: candidate.source_fragment_ids.clone(),
+                claim_kind: candidate.claim_kind,
+                role: role_by_claim
+                    .get(candidate.id.as_str())
+                    .copied()
+                    .unwrap_or(ClaimRole::Unknown),
+                confidence: candidate.confidence,
+            });
+    }
+    by_text.into_values().collect()
+}
+
+fn formalize(propositions: &[NormalizedProposition]) -> Vec<FormalizationCandidate> {
+    propositions
+        .iter()
+        .map(|proposition| {
+            let predicate = sanitize_identifier(&proposition.id);
+            let ast = if proposition
+                .canonical_text
+                .to_ascii_lowercase()
+                .contains(" not ")
+            {
+                FormalLogicAst::Not {
+                    value: Box::new(FormalLogicAst::Atomic {
+                        predicate,
+                        args: Vec::new(),
+                    }),
+                }
+            } else {
+                FormalLogicAst::Atomic {
+                    predicate,
+                    args: Vec::new(),
+                }
+            };
+            let lean_expression = lean_expression_for_ast(&ast);
+            FormalizationCandidate {
+                id: format!("formal_{}", proposition.id),
+                proposition_id: proposition.id.clone(),
+                ast,
+                lean_expression,
+                status: FormalizationStatus::SchemaValid,
+                confidence: 0.5,
+                diagnostics: Vec::new(),
+            }
+        })
+        .collect()
+}
+
+fn evaluate_formalizations(
+    formalizations: &[FormalizationCandidate],
+    config: &PipelineConfig,
+) -> Vec<FormalEvaluation> {
+    formalizations
+        .iter()
+        .map(|candidate| FormalEvaluation {
+            formalization_id: candidate.id.clone(),
+            proposition_id: candidate.proposition_id.clone(),
+            status: FormalEvaluationStatus::Unsupported,
+            lean_source: Some(format!(
+                "-- Lean binary: {}\ndef {} : Prop := {}\n#check {}\n",
+                config.lean_bin,
+                sanitize_identifier(&candidate.id),
+                candidate.lean_expression,
+                sanitize_identifier(&candidate.id)
+            )),
+            diagnostics: vec![PipelineDiagnostic {
+                code: "unsupported_goal".to_string(),
+                severity: "info".to_string(),
+                message: "Lean MVP generated typecheckable source; proof search is unsupported for this candidate.".to_string(),
+                target_id: Some(candidate.id.clone()),
+            }],
+        })
+        .collect()
+}
+
+fn argument_relations(arguments: &[ArgumentCandidate]) -> Vec<RelationCandidate> {
+    let mut relations = Vec::new();
+    for argument in arguments {
+        for support in &argument.support_relations {
+            let mut metadata = BTreeMap::new();
+            metadata.insert("argumentId".to_string(), Value::String(argument.id.clone()));
+            metadata.insert("reviewRequired".to_string(), Value::Bool(true));
+            relations.push(RelationCandidate {
+                from_proposition_id: support.from_claim_id.clone(),
+                to_proposition_id: support.to_claim_id.clone(),
+                kind: support.relation,
+                confidence: support.confidence,
+                note: Some("Argument reconstruction linked premise to conclusion.".to_string()),
+                metadata,
+            });
+        }
+    }
+    relations
+}
+
+fn empty_worldview(document: &ExtractionDocument, config: &PipelineConfig) -> UnifiedWorldviewV10 {
+    worldview::build_worldview(document, &[], &[], &[], config)
+}
+
+fn cosine(left: &[f32], right: &[f32]) -> f64 {
+    if left.is_empty() || right.is_empty() || left.len() != right.len() {
+        return 0.0;
+    }
+    let dot = left
+        .iter()
+        .zip(right)
+        .map(|(left, right)| f64::from(*left) * f64::from(*right))
+        .sum::<f64>();
+    let left_norm = left
+        .iter()
+        .map(|value| f64::from(*value) * f64::from(*value))
+        .sum::<f64>()
+        .sqrt();
+    let right_norm = right
+        .iter()
+        .map(|value| f64::from(*value) * f64::from(*value))
+        .sum::<f64>()
+        .sqrt();
+    if left_norm == 0.0 || right_norm == 0.0 {
+        0.0
+    } else {
+        dot / (left_norm * right_norm)
+    }
+}
+
+fn sanitize_identifier(value: &str) -> String {
+    let mut output = String::new();
+    for ch in value.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            output.push(ch);
+        } else {
+            output.push('_');
+        }
+    }
+    if output
+        .chars()
+        .next()
+        .is_none_or(|ch| !ch.is_ascii_alphabetic())
+    {
+        output.insert(0, 'p');
+    }
+    output
+}
+
+fn lean_expression_for_ast(ast: &FormalLogicAst) -> String {
+    match ast {
+        FormalLogicAst::Atomic { .. } => "True".to_string(),
+        FormalLogicAst::Not { value } => format!("Not ({})", lean_expression_for_ast(value)),
+        FormalLogicAst::And { values } => values
+            .iter()
+            .map(lean_expression_for_ast)
+            .collect::<Vec<_>>()
+            .join(" /\\ "),
+        FormalLogicAst::Or { values } => values
+            .iter()
+            .map(lean_expression_for_ast)
+            .collect::<Vec<_>>()
+            .join(" \\/ "),
+        FormalLogicAst::Implies { left, right } => {
+            format!(
+                "({}) -> ({})",
+                lean_expression_for_ast(left),
+                lean_expression_for_ast(right)
+            )
+        }
+        FormalLogicAst::Iff { left, right } => {
+            format!(
+                "Iff ({}) ({})",
+                lean_expression_for_ast(left),
+                lean_expression_for_ast(right)
+            )
+        }
+        FormalLogicAst::ForAll { variable, body } => {
+            format!(
+                "forall {variable} : Prop, {}",
+                lean_expression_for_ast(body)
+            )
+        }
+        FormalLogicAst::Exists { variable, body } => {
+            format!(
+                "exists {variable} : Prop, {}",
+                lean_expression_for_ast(body)
+            )
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct UnionFind {
+    parents: Vec<usize>,
+}
+
+impl UnionFind {
+    fn new(size: usize) -> Self {
+        Self {
+            parents: (0..size).collect(),
+        }
+    }
+
+    fn find(&mut self, index: usize) -> usize {
+        let parent = self.parents[index];
+        if parent == index {
+            index
+        } else {
+            let root = self.find(parent);
+            self.parents[index] = root;
+            root
+        }
+    }
+
+    fn union(&mut self, left: usize, right: usize) {
+        let left_root = self.find(left);
+        let right_root = self.find(right);
+        if left_root != right_root {
+            self.parents[right_root] = left_root;
+        }
     }
 }
 

@@ -192,7 +192,10 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 name = "philosophy-extractor"
 version = "0.1.0"
 dependencies = [
+ "philosophy-extractor-artifact-store",
+ "philosophy-extractor-model-providers",
  "philosophy-extractor-schema",
+ "serde",
  "serde_json",
  "sha2",
  "thiserror",
@@ -210,6 +213,12 @@ dependencies = [
 [[package]]
 name = "philosophy-extractor-artifact-store"
 version = "0.1.0"
+dependencies = [
+ "philosophy-extractor-schema",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "philosophy-extractor-exporters"
@@ -222,6 +231,12 @@ dependencies = [
 [[package]]
 name = "philosophy-extractor-model-providers"
 version = "0.1.0"
+dependencies = [
+ "philosophy-extractor-schema",
+ "serde_json",
+ "sha2",
+ "thiserror",
+]
 
 [[package]]
 name = "philosophy-extractor-prompts"

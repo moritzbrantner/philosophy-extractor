@@ -84,7 +84,7 @@ fn is_likely_instruction(value: &str) -> bool {
     .any(|prefix| lower.starts_with(prefix))
 }
 
-fn claim_kind(value: &str) -> ClaimKind {
+pub(crate) fn claim_kind(value: &str) -> ClaimKind {
     let lower = value.to_ascii_lowercase();
     if contains_any(
         &lower,

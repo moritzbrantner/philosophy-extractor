@@ -1,4 +1,8 @@
-use philosophy_extractor::{ExtractionDocument, PhilosophyExtractor, PipelineConfig};
+use philosophy_extractor::{
+    ExtractionDocument, PhilosophyExtractor, PipelineConfig, PipelineStage,
+};
+use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 fn document(text: &str) -> ExtractionDocument {
     ExtractionDocument {
@@ -76,4 +80,69 @@ fn honors_max_propositions() {
         .unwrap();
 
     assert_eq!(response.worldview.propositions.len(), 2);
+}
+
+#[test]
+fn writes_all_mvp_artifacts() {
+    let artifact_dir = temp_artifact_dir("all");
+    let extractor = PhilosophyExtractor::new(PipelineConfig {
+        artifact_dir: artifact_dir.clone(),
+        ..PipelineConfig::default()
+    });
+    let response = extractor
+        .extract(document(
+            "Virtue is knowledge. If virtue is knowledge, teaching matters. Injustice is not good.",
+        ))
+        .unwrap();
+
+    let run_dir = artifact_dir.join(&response.run_id);
+    for file in [
+        "manifest.json",
+        "01_ingest.json",
+        "02_passages.json",
+        "03_embeddings.json",
+        "04_clusters.json",
+        "05_claim_candidates.json",
+        "06_claim_roles.json",
+        "07_terms.json",
+        "08_arguments.json",
+        "09_normalized_propositions.json",
+        "10_formalizations.json",
+        "11_evaluations.json",
+        "worldview.json",
+    ] {
+        assert!(run_dir.join(file).exists(), "missing artifact {file}");
+    }
+    assert_eq!(response.artifacts.len(), 12);
+}
+
+#[test]
+fn stage_through_cluster_stops_after_cluster_artifact() {
+    let artifact_dir = temp_artifact_dir("cluster");
+    let extractor = PhilosophyExtractor::new(PipelineConfig {
+        artifact_dir: artifact_dir.clone(),
+        stage_through: Some(PipelineStage::Cluster),
+        ..PipelineConfig::default()
+    });
+    let response = extractor
+        .extract(document(
+            "Knowledge concerns truth. Justice should guide action.",
+        ))
+        .unwrap();
+
+    let run_dir = artifact_dir.join(&response.run_id);
+    assert!(run_dir.join("04_clusters.json").exists());
+    assert!(!run_dir.join("05_claim_candidates.json").exists());
+    assert_eq!(
+        response.stages.last().map(|stage| stage.name.as_str()),
+        Some("cluster")
+    );
+}
+
+fn temp_artifact_dir(name: &str) -> PathBuf {
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    std::env::temp_dir().join(format!("philosophy-extractor-{name}-{suffix}"))
 }

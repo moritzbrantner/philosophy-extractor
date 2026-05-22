@@ -12,13 +12,39 @@ It targets Truth Engine's unified worldview contract:
 ## Pipeline Stages
 
 1. `ingest`: normalize document text and metadata.
-2. `segment`: split the document into source fragments with stable ids.
-3. `extract`: identify declarative philosophical proposition candidates.
-4. `normalize`: canonicalize proposition text, deduplicate, and filter by confidence.
-5. `relate`: infer lightweight semantic relations between accepted propositions.
-6. `worldview`: emit a Truth Engine-compatible unified worldview.
+2. `segment`: split the document into source-grounded passages with stable ids and offsets.
+3. `embed`: create local passage embeddings.
+4. `cluster`: group related passages by embedding similarity.
+5. `extract_claims`: identify source-grounded philosophical claim candidates.
+6. `classify_roles`: assign argument roles to claims.
+7. `extract_terms`: extract local term candidates and mark them for review.
+8. `reconstruct_arguments`: link premises, conclusions, support, and attack candidates.
+9. `normalize_propositions`: canonicalize proposition text, deduplicate, and filter by confidence.
+10. `formalize`: create schema-validated formalization candidates.
+11. `evaluate`: emit Lean-oriented evaluation artifacts.
+12. `worldview`: emit a Truth Engine-compatible unified worldview.
 
-The default CLI output includes the worldview, candidates, diagnostics, and per-stage summaries. Use `--worldview-only` when writing a payload intended for direct Truth Engine import.
+The default CLI output includes the worldview, candidates, diagnostics, artifact references, and per-stage summaries. Use `--worldview-only` when writing a payload intended for direct Truth Engine import.
+
+Every run persists reviewable JSON artifacts by default under `.artifacts/{run_id}`:
+
+```text
+manifest.json
+01_ingest.json
+02_passages.json
+03_embeddings.json
+04_clusters.json
+05_claim_candidates.json
+06_claim_roles.json
+07_terms.json
+08_arguments.json
+09_normalized_propositions.json
+10_formalizations.json
+11_evaluations.json
+worldview.json
+```
+
+The MVP is offline-capable. Provider boundaries are in place for OpenAI Responses, local embeddings/NER, and Lean, while the default testable implementation uses deterministic local fallbacks so `cargo test` does not require network access, model downloads, or Lean.
 
 ## Workspace Layout
 
@@ -38,6 +64,36 @@ The default CLI output includes the worldview, candidates, diagnostics, and per-
 
 ```bash
 cargo run -p philosophy-extractor-worker -- path/to/text.txt --title "Nicomachean Ethics" --author Aristotle --pretty
+```
+
+Stop after clustering and write only artifacts through `04_clusters.json`:
+
+```bash
+cargo run -p philosophy-extractor-worker -- path/to/text.txt \
+  --stage-through cluster \
+  --artifacts-dir .artifacts \
+  --pretty
+```
+
+Configure provider model ids:
+
+```bash
+cargo run -p philosophy-extractor-worker -- path/to/text.txt \
+  --openai-model-primary gpt-5.5 \
+  --openai-model-cheap gpt-5.5-mini \
+  --embedding-model sentence-transformers/all-MiniLM-L6-v2 \
+  --ner-model rust-bert-default-ner \
+  --lean-bin lean
+```
+
+Equivalent environment defaults are supported:
+
+```text
+PHILOSOPHY_EXTRACTOR_ARTIFACT_DIR
+PHILOSOPHY_EXTRACTOR_OPENAI_MODEL_PRIMARY
+PHILOSOPHY_EXTRACTOR_OPENAI_MODEL_CHEAP
+PHILOSOPHY_EXTRACTOR_LEAN_BIN
+OPENAI_API_KEY
 ```
 
 Write only the normalized worldview:
@@ -83,6 +139,26 @@ Extract from text:
 ```bash
 curl -X POST http://localhost:8080/extract \
   --data 'Knowledge concerns truth. Justice should harmonize the soul.'
+```
+
+Extract from a JSON request:
+
+```bash
+curl -X POST http://localhost:8080/extract \
+  -H 'content-type: application/json' \
+  --data '{
+    "document": {
+      "id": "doc-example",
+      "title": "Fragment",
+      "authors": ["Example Author"],
+      "language": "en",
+      "text": "Knowledge concerns truth. Justice should harmonize the soul."
+    },
+    "config": {
+      "stageThrough": "evaluate",
+      "persistArtifacts": true
+    }
+  }'
 ```
 
 The existing Compose setup can also run the API:
