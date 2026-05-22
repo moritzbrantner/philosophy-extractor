@@ -1,0 +1,7 @@
+[package]
+name = "philosophy-extractor-source-ingestion"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+philosophy-extractor-schema.workspace = true

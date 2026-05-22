@@ -1,0 +1,6 @@
+[package]
+name = "philosophy-extractor-model-providers"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

@@ -1,0 +1,6 @@
+[package]
+name = "philosophy-extractor-prompts"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

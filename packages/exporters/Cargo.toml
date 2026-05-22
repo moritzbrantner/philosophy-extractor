@@ -1,0 +1,8 @@
+[package]
+name = "philosophy-extractor-exporters"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+philosophy-extractor-schema.workspace = true
+serde_json.workspace = true

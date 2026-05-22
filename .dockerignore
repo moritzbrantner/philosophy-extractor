@@ -1,0 +1,8 @@
+.git
+target
+Dockerfile
+docker-compose.override.yml
+.env
+.env.*
+*.log
+.DS_Store
