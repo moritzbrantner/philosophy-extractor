@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  rust:
+    name: Rust
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout philosophy-extractor
+        uses: actions/checkout@v4
+        with:
+          path: philosophy-extractor
+
+      - name: Checkout rust-packages
+        uses: actions/checkout@v4
+        with:
+          repository: moritzbrantner/rust-packages
+          path: rust-packages
+
+      - name: Install system dependencies
+        run: |
+          if command -v apt-get >/dev/null 2>&1; then
+            if command -v sudo >/dev/null 2>&1; then
+              SUDO=sudo
+            else
+              SUDO=
+            fi
+            $SUDO apt-get update
+            $SUDO apt-get install -y cmake
+          fi
+
+      - name: Install Rust
+        run: |
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+              | sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustup toolchain install 1.95.0 --profile minimal --component rustfmt
+          rustup override set 1.95.0
+
+      - name: Check formatting
+        working-directory: philosophy-extractor
+        run: cargo fmt --check
+
+      - name: Build
+        working-directory: philosophy-extractor
+        run: cargo build --workspace --locked
+
+      - name: Test
+        working-directory: philosophy-extractor
+        run: cargo test --workspace --locked
