@@ -1,5 +1,7 @@
+use philosophy_extractor::model::{ArtifactEnvelope, ClaimKind, Passage};
 use philosophy_extractor::{
-    ExtractionDocument, PhilosophyExtractor, PipelineConfig, PipelineStage,
+    EmbeddingBackendConfig, ExtractionDocument, NlpMode, PhilosophyExtractor, PipelineConfig,
+    PipelineStage, TermExtractionBackendConfig,
 };
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -136,6 +138,129 @@ fn stage_through_cluster_stops_after_cluster_artifact() {
     assert_eq!(
         response.stages.last().map(|stage| stage.name.as_str()),
         Some("cluster")
+    );
+}
+
+#[test]
+fn text_core_segmentation_preserves_source_offsets() {
+    let artifact_dir = temp_artifact_dir("segment-offsets");
+    let text = "Dr. Smith wrote pi is 3.14. Wait... Really? Yes!";
+    let extractor = PhilosophyExtractor::new(PipelineConfig {
+        artifact_dir: artifact_dir.clone(),
+        stage_through: Some(PipelineStage::Segment),
+        ..PipelineConfig::default()
+    });
+    let response = extractor.extract(document(text)).unwrap();
+    let run_dir = artifact_dir.join(&response.run_id);
+    let envelope = serde_json::from_str::<ArtifactEnvelope<Vec<Passage>>>(
+        &std::fs::read_to_string(run_dir.join("02_passages.json")).unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(envelope.provider, "rules+local-small-model");
+    assert!(!envelope.payload.is_empty());
+    for passage in envelope.payload {
+        assert_eq!(&text[passage.start_char..passage.end_char], passage.text);
+    }
+}
+
+#[test]
+fn text_retrieval_embedding_artifact_records_model_provenance() {
+    let artifact_dir = temp_artifact_dir("text-retrieval-embed");
+    let extractor = PhilosophyExtractor::new(PipelineConfig {
+        artifact_dir: artifact_dir.clone(),
+        stage_through: Some(PipelineStage::Embed),
+        embedding_backend: EmbeddingBackendConfig::TextRetrieval,
+        ..PipelineConfig::default()
+    });
+    let response = extractor
+        .extract(document(
+            "Knowledge concerns truth. Justice concerns action.",
+        ))
+        .unwrap();
+    let run_dir = artifact_dir.join(&response.run_id);
+    let envelope = serde_json::from_str::<ArtifactEnvelope<serde_json::Value>>(
+        &std::fs::read_to_string(run_dir.join("03_embeddings.json")).unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(envelope.provider, "text-retrieval-feature-extraction");
+    assert_eq!(
+        envelope
+            .metadata
+            .get("taskCategory")
+            .and_then(|value| value.as_str()),
+        Some("feature-extraction")
+    );
+    assert_eq!(
+        envelope
+            .metadata
+            .get("modelId")
+            .and_then(|value| value.as_str()),
+        Some("sentence-transformers/all-MiniLM-L6-v2")
+    );
+}
+
+#[test]
+fn local_models_stage_through_cluster_stops_before_ner() {
+    let artifact_dir = temp_artifact_dir("local-models-cluster");
+    let extractor = PhilosophyExtractor::new(PipelineConfig {
+        artifact_dir: artifact_dir.clone(),
+        nlp_mode: NlpMode::LocalModels,
+        auto_download_models: false,
+        stage_through: Some(PipelineStage::Cluster),
+        ..PipelineConfig::default()
+    });
+    let response = extractor
+        .extract(document(
+            "Knowledge concerns truth. Justice concerns action.",
+        ))
+        .unwrap();
+
+    let run_dir = artifact_dir.join(&response.run_id);
+    assert!(run_dir.join("04_clusters.json").exists());
+    assert!(!run_dir.join("07_terms.json").exists());
+    assert_eq!(
+        response.stages.last().map(|stage| stage.name.as_str()),
+        Some("cluster")
+    );
+}
+
+#[test]
+fn text_linguistics_terms_fall_back_without_duplicate_heuristic_labels() {
+    let extractor = PhilosophyExtractor::new(PipelineConfig {
+        persist_artifacts: false,
+        term_extraction_backend: TermExtractionBackendConfig::TextLinguistics,
+        auto_download_models: false,
+        ..PipelineConfig::default()
+    });
+    let response = extractor
+        .extract(document("Knowledge concerns truth. Knowledge matters."))
+        .unwrap();
+    let term_stage = response
+        .stages
+        .iter()
+        .find(|stage| stage.name == "extract_terms")
+        .unwrap();
+
+    assert!(term_stage.output_count >= 2);
+    assert!(
+        term_stage
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "ner_provider_unavailable")
+    );
+}
+
+#[test]
+fn classifier_unknown_labels_map_to_safe_fallbacks() {
+    assert_eq!(
+        philosophy_extractor::pipeline::claim_kind_from_label("surprise"),
+        ClaimKind::Unknown
+    );
+    assert_eq!(
+        philosophy_extractor::pipeline::relation_kind_from_label("surprise"),
+        None
     );
 }
 

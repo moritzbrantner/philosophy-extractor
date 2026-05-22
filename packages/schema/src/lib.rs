@@ -111,6 +111,8 @@ pub struct ArtifactRef {
     pub path: String,
     pub provider: String,
     pub provider_version: String,
+    #[serde(default, skip_serializing_if = "Metadata::is_empty")]
+    pub metadata: Metadata,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -121,6 +123,12 @@ pub struct PipelineRunConfig {
     pub openai_model_cheap: String,
     pub embedding_model: String,
     pub ner_model: String,
+    pub nlp_mode: String,
+    pub model_bundle_dir: PathBuf,
+    pub auto_download_models: bool,
+    pub embedding_backend: String,
+    pub term_extraction_backend: String,
+    pub classification_backend: String,
     pub lean_bin: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stage_through: Option<PipelineStage>,
@@ -143,6 +151,8 @@ pub struct ArtifactEnvelope<T> {
     pub stage: PipelineStage,
     pub provider: String,
     pub provider_version: String,
+    #[serde(default, skip_serializing_if = "Metadata::is_empty")]
+    pub metadata: Metadata,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub input_artifact_ids: Vec<String>,
     pub created_at: String,

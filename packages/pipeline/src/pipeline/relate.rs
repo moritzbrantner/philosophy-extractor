@@ -1,6 +1,8 @@
 use crate::model::{ClaimKind, Metadata, PropositionCandidate, RelationCandidate, RelationKind};
 use serde_json::Value;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use text_embeddings::{HashedTextEmbedder, TextEmbeddingConfig};
+use text_retrieval::{HybridConfig, IngestionOptions, RetrievalIndex, SearchDocument, SearchQuery};
 
 pub fn infer_relations(candidates: &[PropositionCandidate]) -> Vec<RelationCandidate> {
     let mut relations = Vec::new();
@@ -63,6 +65,88 @@ pub fn infer_relations(candidates: &[PropositionCandidate]) -> Vec<RelationCandi
             .then_with(|| left.kind.as_str().cmp(right.kind.as_str()))
     });
     relations
+}
+
+pub fn rerank_relations_with_text_retrieval(
+    candidates: &[PropositionCandidate],
+    relations: Vec<RelationCandidate>,
+) -> Vec<RelationCandidate> {
+    if candidates.len() < 2 || relations.is_empty() {
+        return relations;
+    }
+    let Ok(embedder) = HashedTextEmbedder::new(
+        TextEmbeddingConfig {
+            dimensions: 128,
+            use_idf: false,
+        },
+        Default::default(),
+    ) else {
+        return relations;
+    };
+    let mut index = RetrievalIndex::new(embedder);
+    let documents = candidates
+        .iter()
+        .map(|candidate| {
+            SearchDocument::new(candidate.id.clone(), candidate.canonical_text.clone())
+        })
+        .collect::<Vec<_>>();
+    if index
+        .ingest_documents(
+            &documents,
+            &IngestionOptions {
+                chunk_tokens: 128,
+                chunk_overlap_tokens: 0,
+                store_raw_text: true,
+            },
+        )
+        .is_err()
+    {
+        return relations;
+    }
+
+    let text_by_id = candidates
+        .iter()
+        .map(|candidate| (candidate.id.as_str(), candidate.canonical_text.as_str()))
+        .collect::<BTreeMap<_, _>>();
+
+    relations
+        .into_iter()
+        .map(|mut relation| {
+            let Some(query_text) = text_by_id.get(relation.from_proposition_id.as_str()) else {
+                return relation;
+            };
+            let query = SearchQuery::hybrid(
+                *query_text,
+                candidates.len().min(8),
+                HybridConfig {
+                    semantic_weight: 0.75,
+                    lexical_weight: 0.25,
+                    rerank_window: candidates.len().min(16).max(1),
+                },
+            );
+            if let Ok(results) = index.search(&query)
+                && let Some(result) = results
+                    .iter()
+                    .find(|result| result.document_id == relation.to_proposition_id)
+            {
+                let retrieval_confidence = f64::from(result.score.clamp(0.0, 1.0));
+                relation.confidence = relation.confidence.max(retrieval_confidence);
+                relation.metadata.insert(
+                    "rankingBackend".to_string(),
+                    Value::String("text-retrieval-hybrid".to_string()),
+                );
+                relation.metadata.insert(
+                    "semanticScore".to_string(),
+                    Value::from(f64::from(result.semantic_score)),
+                );
+                relation.metadata.insert(
+                    "lexicalScore".to_string(),
+                    Value::from(f64::from(result.lexical_score)),
+                );
+            }
+            relation
+        })
+        .collect()
 }
 
 fn relation(

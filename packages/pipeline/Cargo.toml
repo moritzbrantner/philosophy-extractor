@@ -3,6 +3,10 @@ name = "philosophy-extractor"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = []
+local-models = ["philosophy-extractor-model-providers/local-models"]
+
 [dependencies]
 philosophy-extractor-artifact-store = { path = "../artifact-store" }
 philosophy-extractor-model-providers = { path = "../model-providers" }
@@ -10,4 +14,7 @@ philosophy-extractor-schema.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+text-core.workspace = true
+text-embeddings.workspace = true
+text-retrieval.workspace = true
 thiserror.workspace = true

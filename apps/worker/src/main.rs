@@ -1,6 +1,7 @@
 use clap::Parser;
 use philosophy_extractor::{
-    ExtractionDocument, PhilosophyExtractor, PipelineConfig, PipelineStage,
+    ClassificationBackendConfig, EmbeddingBackendConfig, ExtractionDocument, NlpMode,
+    PhilosophyExtractor, PipelineConfig, PipelineStage, TermExtractionBackendConfig,
 };
 use std::{fs, io::Read, path::PathBuf};
 
@@ -81,6 +82,30 @@ struct Cli {
     #[arg(long)]
     ner_model: Option<String>,
 
+    /// NLP mode: heuristic or local-models.
+    #[arg(long)]
+    nlp_mode: Option<String>,
+
+    /// Directory containing local model bundles.
+    #[arg(long)]
+    model_bundle_dir: Option<PathBuf>,
+
+    /// Allow configured local model providers to download missing model bundles.
+    #[arg(long)]
+    auto_download_models: bool,
+
+    /// Embedding backend: deterministic or text-retrieval.
+    #[arg(long)]
+    embedding_backend: Option<String>,
+
+    /// Term extraction backend: heuristic or text-linguistics.
+    #[arg(long)]
+    term_extraction_backend: Option<String>,
+
+    /// Classification backend: heuristic or text-linguistics.
+    #[arg(long)]
+    classification_backend: Option<String>,
+
     /// Lean executable path.
     #[arg(long)]
     lean_bin: Option<String>,
@@ -132,6 +157,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(model) = cli.ner_model {
         config.ner_model = model;
     }
+    if let Some(mode) = cli.nlp_mode {
+        config.nlp_mode = parse_nlp_mode(&mode)?;
+        if config.nlp_mode == NlpMode::LocalModels {
+            config.auto_download_models = true;
+        }
+    }
+    if let Some(path) = cli.model_bundle_dir {
+        config.model_bundle_dir = path;
+    }
+    if cli.auto_download_models {
+        config.auto_download_models = true;
+    }
+    if let Some(backend) = cli.embedding_backend {
+        config.embedding_backend = parse_embedding_backend(&backend)?;
+    }
+    if let Some(backend) = cli.term_extraction_backend {
+        config.term_extraction_backend = parse_term_extraction_backend(&backend)?;
+    }
+    if let Some(backend) = cli.classification_backend {
+        config.classification_backend = parse_classification_backend(&backend)?;
+    }
     if let Some(lean_bin) = cli.lean_bin {
         config.lean_bin = lean_bin;
     }
@@ -151,6 +197,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+fn parse_nlp_mode(value: &str) -> Result<NlpMode, Box<dyn std::error::Error>> {
+    match value {
+        "heuristic" => Ok(NlpMode::Heuristic),
+        "local-models" | "local_models" => Ok(NlpMode::LocalModels),
+        _ => Err(format!("unknown nlp mode '{value}'").into()),
+    }
+}
+
+fn parse_embedding_backend(
+    value: &str,
+) -> Result<EmbeddingBackendConfig, Box<dyn std::error::Error>> {
+    match value {
+        "deterministic" => Ok(EmbeddingBackendConfig::Deterministic),
+        "text-retrieval" | "text_retrieval" => Ok(EmbeddingBackendConfig::TextRetrieval),
+        _ => Err(format!("unknown embedding backend '{value}'").into()),
+    }
+}
+
+fn parse_term_extraction_backend(
+    value: &str,
+) -> Result<TermExtractionBackendConfig, Box<dyn std::error::Error>> {
+    match value {
+        "heuristic" => Ok(TermExtractionBackendConfig::Heuristic),
+        "text-linguistics" | "text_linguistics" => Ok(TermExtractionBackendConfig::TextLinguistics),
+        _ => Err(format!("unknown term extraction backend '{value}'").into()),
+    }
+}
+
+fn parse_classification_backend(
+    value: &str,
+) -> Result<ClassificationBackendConfig, Box<dyn std::error::Error>> {
+    match value {
+        "heuristic" => Ok(ClassificationBackendConfig::Heuristic),
+        "text-linguistics" | "text_linguistics" => Ok(ClassificationBackendConfig::TextLinguistics),
+        _ => Err(format!("unknown classification backend '{value}'").into()),
+    }
 }
 
 fn parse_stage(value: &str) -> Result<PipelineStage, Box<dyn std::error::Error>> {

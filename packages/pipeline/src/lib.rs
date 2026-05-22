@@ -6,4 +6,7 @@ pub use model::{
     ArtifactRef, ExtractionDocument, ExtractionResponse, PipelineDiagnostic, PipelineStage,
     SourceFragment, UnifiedWorldviewV10,
 };
-pub use pipeline::{PhilosophyExtractor, PipelineConfig};
+pub use pipeline::{
+    ClassificationBackendConfig, EmbeddingBackendConfig, NlpMode, PhilosophyExtractor,
+    PipelineConfig, TermExtractionBackendConfig,
+};

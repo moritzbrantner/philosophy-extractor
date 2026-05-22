@@ -1,6 +1,7 @@
 use crate::model::{ExtractionDocument, Passage};
 
 use super::source_document_id_for;
+use text_core::{TextProcessingOptions, split_paragraphs, split_sentence_spans};
 
 pub fn segment_passages(document: &ExtractionDocument) -> Vec<Passage> {
     let document_id = source_document_id_for(document);
@@ -34,67 +35,35 @@ struct SentenceSpan {
 }
 
 fn sentence_spans(text: &str) -> Vec<SentenceSpan> {
-    let mut spans = Vec::new();
-    let mut current = String::new();
-    let mut current_start = None;
-    let mut paragraph_index = 0;
-    let mut sentence_in_paragraph = 1;
-    let mut previous_was_newline = false;
+    let options = TextProcessingOptions::default();
+    let paragraphs = split_paragraphs(text);
+    let mut sentence_counts_by_paragraph = Vec::<usize>::new();
 
-    for (index, ch) in text.char_indices() {
-        if current_start.is_none() && !ch.is_whitespace() {
-            current_start = Some(index);
-        }
-        current.push(ch);
-        if matches!(ch, '.' | '!' | '?' | '\n') {
-            push_current(
-                &mut spans,
-                &mut current,
-                &mut current_start,
+    let spans = split_sentence_spans(text, &options)
+        .into_iter()
+        .map(|sentence| {
+            let paragraph_index = paragraphs
+                .iter()
+                .position(|paragraph| {
+                    sentence.span.byte_start >= paragraph.span.byte_start
+                        && sentence.span.byte_start < paragraph.span.byte_end
+                })
+                .unwrap_or(0);
+            if sentence_counts_by_paragraph.len() <= paragraph_index {
+                sentence_counts_by_paragraph.resize(paragraph_index + 1, 0);
+            }
+            sentence_counts_by_paragraph[paragraph_index] += 1;
+            SentenceSpan {
                 paragraph_index,
-                sentence_in_paragraph,
-                index + ch.len_utf8(),
-            );
-            sentence_in_paragraph += 1;
-        }
-        if ch == '\n' && previous_was_newline {
-            paragraph_index += 1;
-            sentence_in_paragraph = 1;
-        }
-        previous_was_newline = ch == '\n';
-    }
-    push_current(
-        &mut spans,
-        &mut current,
-        &mut current_start,
-        paragraph_index,
-        sentence_in_paragraph,
-        text.len(),
-    );
+                sequence: sentence_counts_by_paragraph[paragraph_index],
+                start_char: sentence.span.byte_start,
+                end_char: sentence.span.byte_end,
+                text: sentence.text,
+            }
+        })
+        .collect();
 
     merge_tiny_spans(spans)
-}
-
-fn push_current(
-    spans: &mut Vec<SentenceSpan>,
-    current: &mut String,
-    current_start: &mut Option<usize>,
-    paragraph_index: usize,
-    sequence: usize,
-    end_char: usize,
-) {
-    let value = current.trim();
-    if !value.is_empty() {
-        spans.push(SentenceSpan {
-            paragraph_index,
-            sequence,
-            start_char: current_start.unwrap_or(0),
-            end_char,
-            text: value.to_string(),
-        });
-    }
-    current.clear();
-    *current_start = None;
 }
 
 fn merge_tiny_spans(spans: Vec<SentenceSpan>) -> Vec<SentenceSpan> {

@@ -15,7 +15,11 @@ use crate::model::{
     UnifiedWorldviewV10,
 };
 use philosophy_extractor_artifact_store::{ArtifactStoreError, FileArtifactStore, artifact_id};
-use philosophy_extractor_model_providers::{DeterministicEmbeddingProvider, EmbeddingProvider};
+use philosophy_extractor_model_providers::{
+    ClaimClassifierProvider, DeterministicEmbeddingProvider, EmbeddingProvider,
+    HeuristicClaimClassifierProvider, NerProvider, RustPackagesEmbeddingProvider,
+    TextLinguisticsNerProvider,
+};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
@@ -36,8 +40,74 @@ pub struct PipelineConfig {
     pub openai_model_cheap: String,
     pub embedding_model: String,
     pub ner_model: String,
+    pub nlp_mode: NlpMode,
+    pub model_bundle_dir: PathBuf,
+    pub auto_download_models: bool,
+    pub embedding_backend: EmbeddingBackendConfig,
+    pub term_extraction_backend: TermExtractionBackendConfig,
+    pub classification_backend: ClassificationBackendConfig,
     pub lean_bin: String,
     pub stage_through: Option<PipelineStage>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NlpMode {
+    Heuristic,
+    LocalModels,
+}
+
+impl NlpMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Heuristic => "heuristic",
+            Self::LocalModels => "local-models",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmbeddingBackendConfig {
+    Deterministic,
+    TextRetrieval,
+}
+
+impl EmbeddingBackendConfig {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Deterministic => "deterministic",
+            Self::TextRetrieval => "text-retrieval",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TermExtractionBackendConfig {
+    Heuristic,
+    TextLinguistics,
+}
+
+impl TermExtractionBackendConfig {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Heuristic => "heuristic",
+            Self::TextLinguistics => "text-linguistics",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClassificationBackendConfig {
+    Heuristic,
+    TextLinguistics,
+}
+
+impl ClassificationBackendConfig {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Heuristic => "heuristic",
+            Self::TextLinguistics => "text-linguistics",
+        }
+    }
 }
 
 impl Default for PipelineConfig {
@@ -58,6 +128,12 @@ impl Default for PipelineConfig {
                 .unwrap_or_else(|_| "gpt-5.5-mini".to_string()),
             embedding_model: "sentence-transformers/all-MiniLM-L6-v2".to_string(),
             ner_model: "rust-bert-default-ner".to_string(),
+            nlp_mode: NlpMode::Heuristic,
+            model_bundle_dir: PathBuf::from(".video-analysis-models"),
+            auto_download_models: false,
+            embedding_backend: EmbeddingBackendConfig::Deterministic,
+            term_extraction_backend: TermExtractionBackendConfig::Heuristic,
+            classification_backend: ClassificationBackendConfig::Heuristic,
             lean_bin: std::env::var("PHILOSOPHY_EXTRACTOR_LEAN_BIN")
                 .unwrap_or_else(|_| "lean".to_string()),
             stage_through: None,
@@ -152,28 +228,29 @@ impl PhilosophyExtractor {
             return self.partial_response(run_id, artifacts, diagnostics, stages, &document);
         }
 
-        let embeddings = embed_passages(&passages, &self.config)?;
-        persist_stage(
+        let embedding_output = embed_passages(&passages, &self.config)?;
+        persist_stage_with_metadata(
             store.as_ref(),
             &run_id,
             PipelineStage::Embed,
-            "local-deterministic-embeddings",
-            &self.config.embedding_model,
+            &embedding_output.provider,
+            &embedding_output.provider_version,
+            embedding_output.metadata.clone(),
             vec![artifact_id(&run_id, PipelineStage::Segment)],
             Vec::new(),
-            &embeddings,
+            &embedding_output.embeddings,
             &mut artifacts,
         )?;
         stages.push(StageSummary {
             name: "embed".to_string(),
-            output_count: embeddings.len(),
+            output_count: embedding_output.embeddings.len(),
             diagnostics: Vec::new(),
         });
         if should_stop(stage_through, PipelineStage::Embed) {
             return self.partial_response(run_id, artifacts, diagnostics, stages, &document);
         }
 
-        let clusters = cluster_passages(&passages, &embeddings);
+        let clusters = cluster_passages(&passages, &embedding_output.embeddings);
         persist_stage(
             store.as_ref(),
             &run_id,
@@ -217,49 +294,51 @@ impl PhilosophyExtractor {
             return self.partial_response(run_id, artifacts, diagnostics, stages, &document);
         }
 
-        let roles = classify_roles(&claim_candidates);
-        persist_stage(
+        let role_output = classify_roles(&claim_candidates, &self.config);
+        persist_stage_with_metadata(
             store.as_ref(),
             &run_id,
             PipelineStage::ClassifyRoles,
-            "openai-role-classifier-fallback",
-            &self.config.openai_model_primary,
+            &role_output.provider,
+            &role_output.provider_version,
+            role_output.metadata.clone(),
             vec![artifact_id(&run_id, PipelineStage::ExtractClaims)],
             Vec::new(),
-            &roles,
+            &role_output.roles,
             &mut artifacts,
         )?;
         stages.push(StageSummary {
             name: "classify_roles".to_string(),
-            output_count: roles.len(),
+            output_count: role_output.roles.len(),
             diagnostics: Vec::new(),
         });
         if should_stop(stage_through, PipelineStage::ClassifyRoles) {
             return self.partial_response(run_id, artifacts, diagnostics, stages, &document);
         }
 
-        let terms = extract_terms(&passages);
-        persist_stage(
+        let term_output = extract_terms(&passages, &self.config);
+        persist_stage_with_metadata(
             store.as_ref(),
             &run_id,
             PipelineStage::ExtractTerms,
-            "local-ner+gpt-verifier-fallback",
-            &self.config.ner_model,
+            &term_output.provider,
+            &term_output.provider_version,
+            term_output.metadata.clone(),
             vec![artifact_id(&run_id, PipelineStage::ClassifyRoles)],
-            Vec::new(),
-            &terms,
+            term_output.diagnostics.clone(),
+            &term_output.terms,
             &mut artifacts,
         )?;
         stages.push(StageSummary {
             name: "extract_terms".to_string(),
-            output_count: terms.len(),
-            diagnostics: Vec::new(),
+            output_count: term_output.terms.len(),
+            diagnostics: term_output.diagnostics,
         });
         if should_stop(stage_through, PipelineStage::ExtractTerms) {
             return self.partial_response(run_id, artifacts, diagnostics, stages, &document);
         }
 
-        let arguments = reconstruct_arguments(&clusters, &claim_candidates, &roles);
+        let arguments = reconstruct_arguments(&clusters, &claim_candidates, &role_output.roles);
         persist_stage(
             store.as_ref(),
             &run_id,
@@ -286,7 +365,7 @@ impl PhilosophyExtractor {
             &self.config,
             &mut diagnostics,
         );
-        let normalized_propositions = normalized_propositions(&candidates, &roles);
+        let normalized_propositions = normalized_propositions(&candidates, &role_output.roles);
         persist_stage(
             store.as_ref(),
             &run_id,
@@ -351,6 +430,11 @@ impl PhilosophyExtractor {
 
         let relations = if self.config.include_relations {
             let mut relations = relate::infer_relations(&candidates);
+            if self.config.embedding_backend == EmbeddingBackendConfig::TextRetrieval
+                || self.config.nlp_mode == NlpMode::LocalModels
+            {
+                relations = relate::rerank_relations_with_text_retrieval(&candidates, relations);
+            }
             relations.extend(argument_relations(&arguments));
             relations
         } else {
@@ -463,6 +547,12 @@ fn pipeline_run_config(config: &PipelineConfig) -> PipelineRunConfig {
         openai_model_cheap: config.openai_model_cheap.clone(),
         embedding_model: config.embedding_model.clone(),
         ner_model: config.ner_model.clone(),
+        nlp_mode: config.nlp_mode.as_str().to_string(),
+        model_bundle_dir: config.model_bundle_dir.clone(),
+        auto_download_models: config.auto_download_models,
+        embedding_backend: config.embedding_backend.as_str().to_string(),
+        term_extraction_backend: config.term_extraction_backend.as_str().to_string(),
+        classification_backend: config.classification_backend.as_str().to_string(),
         lean_bin: config.lean_bin.clone(),
         stage_through: config.stage_through,
     }
@@ -479,12 +569,39 @@ fn persist_stage<T: Serialize>(
     payload: &T,
     artifacts: &mut Vec<ArtifactRef>,
 ) -> Result<(), PipelineError> {
+    persist_stage_with_metadata(
+        store,
+        run_id,
+        stage,
+        provider,
+        provider_version,
+        BTreeMap::new(),
+        input_artifact_ids,
+        diagnostics,
+        payload,
+        artifacts,
+    )
+}
+
+fn persist_stage_with_metadata<T: Serialize>(
+    store: Option<&FileArtifactStore>,
+    run_id: &str,
+    stage: PipelineStage,
+    provider: &str,
+    provider_version: &str,
+    metadata: BTreeMap<String, Value>,
+    input_artifact_ids: Vec<String>,
+    diagnostics: Vec<PipelineDiagnostic>,
+    payload: &T,
+    artifacts: &mut Vec<ArtifactRef>,
+) -> Result<(), PipelineError> {
     if let Some(store) = store {
         let envelope = ArtifactEnvelope {
             run_id: run_id.to_string(),
             stage,
             provider: provider.to_string(),
             provider_version: provider_version.to_string(),
+            metadata,
             input_artifact_ids,
             created_at: created_at(),
             diagnostics,
@@ -515,11 +632,30 @@ fn source_fragments_from_passages(passages: &[Passage]) -> Vec<SourceFragment> {
         .collect()
 }
 
+#[derive(Debug, Clone)]
+struct EmbeddingStageOutput {
+    embeddings: Vec<PassageEmbedding>,
+    provider: String,
+    provider_version: String,
+    metadata: BTreeMap<String, Value>,
+}
+
 fn embed_passages(
     passages: &[Passage],
     config: &PipelineConfig,
-) -> Result<Vec<PassageEmbedding>, PipelineError> {
-    let provider = DeterministicEmbeddingProvider::new(config.embedding_model.clone());
+) -> Result<EmbeddingStageOutput, PipelineError> {
+    let use_text_retrieval = config.embedding_backend == EmbeddingBackendConfig::TextRetrieval
+        || config.nlp_mode == NlpMode::LocalModels;
+    let provider: Box<dyn EmbeddingProvider> = if use_text_retrieval {
+        Box::new(
+            RustPackagesEmbeddingProvider::new(config.embedding_model.clone(), 128)
+                .map_err(|error| PipelineError::Embedding(error.to_string()))?,
+        )
+    } else {
+        Box::new(DeterministicEmbeddingProvider::new(
+            config.embedding_model.clone(),
+        ))
+    };
     let texts = passages
         .iter()
         .map(|passage| passage.text.clone())
@@ -527,7 +663,7 @@ fn embed_passages(
     let vectors = provider
         .embed(&texts)
         .map_err(|error| PipelineError::Embedding(error.to_string()))?;
-    Ok(passages
+    let embeddings = passages
         .iter()
         .zip(vectors)
         .map(|(passage, vector)| PassageEmbedding {
@@ -536,7 +672,27 @@ fn embed_passages(
             dimensions: vector.len(),
             vector,
         })
-        .collect())
+        .collect();
+    Ok(EmbeddingStageOutput {
+        embeddings,
+        provider: provider.name().to_string(),
+        provider_version: provider.model().to_string(),
+        metadata: provider_metadata(
+            provider.model(),
+            if use_text_retrieval {
+                "text-retrieval"
+            } else {
+                "deterministic"
+            },
+            &config.model_bundle_dir,
+            config.auto_download_models,
+            if use_text_retrieval {
+                "feature-extraction"
+            } else {
+                "deterministic-feature-extraction"
+            },
+        ),
+    })
 }
 
 fn cluster_passages(passages: &[Passage], embeddings: &[PassageEmbedding]) -> Vec<PassageCluster> {
@@ -633,12 +789,24 @@ fn claim_candidates_from_propositions(
         .collect()
 }
 
-fn classify_roles(claims: &[ClaimCandidate]) -> Vec<crate::model::RoleAssignment> {
-    claims
+#[derive(Debug, Clone)]
+struct RoleStageOutput {
+    roles: Vec<crate::model::RoleAssignment>,
+    provider: String,
+    provider_version: String,
+    metadata: BTreeMap<String, Value>,
+}
+
+fn classify_roles(claims: &[ClaimCandidate], config: &PipelineConfig) -> RoleStageOutput {
+    let provider = HeuristicClaimClassifierProvider::new(match config.classification_backend {
+        ClassificationBackendConfig::Heuristic => "heuristic-role-classifier",
+        ClassificationBackendConfig::TextLinguistics => &config.openai_model_primary,
+    });
+    let roles = claims
         .iter()
         .enumerate()
         .map(|(index, claim)| {
-            let primary_role = match claim.claim_kind {
+            let fallback_role = match claim.claim_kind {
                 ClaimKind::Definition => ClaimRole::Definition,
                 ClaimKind::Conditional if index + 1 == claims.len() => ClaimRole::Conclusion,
                 ClaimKind::Conditional => ClaimRole::Premise,
@@ -647,9 +815,20 @@ fn classify_roles(claims: &[ClaimCandidate]) -> Vec<crate::model::RoleAssignment
                 _ if index + 1 == claims.len() && claims.len() > 1 => ClaimRole::Conclusion,
                 _ => ClaimRole::Premise,
             };
+            let classified_role =
+                if config.classification_backend == ClassificationBackendConfig::TextLinguistics {
+                    provider
+                        .classify_role(&claim.raw_text)
+                        .ok()
+                        .map(|classification| claim_role_from_label(&classification.label))
+                        .filter(|role| *role != ClaimRole::Unknown)
+                        .unwrap_or(fallback_role)
+                } else {
+                    fallback_role
+                };
             crate::model::RoleAssignment {
                 claim_id: claim.id.clone(),
-                primary_role,
+                primary_role: classified_role,
                 secondary_roles: Vec::new(),
                 confidence: 0.64,
                 rationale: Some(
@@ -657,10 +836,87 @@ fn classify_roles(claims: &[ClaimCandidate]) -> Vec<crate::model::RoleAssignment
                 ),
             }
         })
-        .collect()
+        .collect();
+    RoleStageOutput {
+        roles,
+        provider: provider.name().to_string(),
+        provider_version: provider.model().to_string(),
+        metadata: provider_metadata(
+            provider.model(),
+            config.classification_backend.as_str(),
+            &config.model_bundle_dir,
+            config.auto_download_models,
+            "text-classification",
+        ),
+    }
 }
 
-fn extract_terms(passages: &[Passage]) -> Vec<TermCandidate> {
+#[derive(Debug, Clone)]
+struct TermStageOutput {
+    terms: Vec<TermCandidate>,
+    provider: String,
+    provider_version: String,
+    metadata: BTreeMap<String, Value>,
+    diagnostics: Vec<PipelineDiagnostic>,
+}
+
+fn extract_terms(passages: &[Passage], config: &PipelineConfig) -> TermStageOutput {
+    let mut diagnostics = Vec::new();
+    let heuristic_terms = extract_terms_heuristic(passages);
+    let use_text_linguistics = config.term_extraction_backend
+        == TermExtractionBackendConfig::TextLinguistics
+        || config.nlp_mode == NlpMode::LocalModels;
+    if !use_text_linguistics {
+        return TermStageOutput {
+            terms: heuristic_terms,
+            provider: "local-heuristic-terms".to_string(),
+            provider_version: "heuristic-concept-v1".to_string(),
+            metadata: provider_metadata(
+                "heuristic-concept-v1",
+                "heuristic",
+                &config.model_bundle_dir,
+                config.auto_download_models,
+                "token-classification",
+            ),
+            diagnostics,
+        };
+    }
+
+    let provider = TextLinguisticsNerProvider::new(
+        config.ner_model.clone(),
+        config.model_bundle_dir.clone(),
+        config.auto_download_models,
+    );
+    let model_terms = match provider.extract_entities(passages) {
+        Ok(terms) => terms,
+        Err(error) => {
+            diagnostics.push(PipelineDiagnostic {
+                code: "ner_provider_unavailable".to_string(),
+                severity: "warning".to_string(),
+                message: format!(
+                    "text-linguistics NER provider was unavailable; heuristic terms were used: {error}"
+                ),
+                target_id: None,
+            });
+            Vec::new()
+        }
+    };
+    TermStageOutput {
+        terms: merge_terms(heuristic_terms, model_terms),
+        provider: provider.name().to_string(),
+        provider_version: provider.model().to_string(),
+        metadata: provider_metadata(
+            provider.model(),
+            "text-linguistics",
+            &config.model_bundle_dir,
+            config.auto_download_models,
+            "token-classification",
+        ),
+        diagnostics,
+    }
+}
+
+fn extract_terms_heuristic(passages: &[Passage]) -> Vec<TermCandidate> {
     let lexicon = [
         "knowledge",
         "truth",
@@ -715,6 +971,95 @@ fn extract_terms(passages: &[Passage]) -> Vec<TermCandidate> {
         }
     }
     by_label.into_values().collect()
+}
+
+fn merge_terms(
+    heuristic_terms: Vec<TermCandidate>,
+    model_terms: Vec<TermCandidate>,
+) -> Vec<TermCandidate> {
+    let mut by_label = BTreeMap::<String, TermCandidate>::new();
+    for term in heuristic_terms.into_iter().chain(model_terms) {
+        by_label
+            .entry(term.normalized_label.clone())
+            .and_modify(|existing| {
+                for passage_id in &term.source_passage_ids {
+                    if !existing.source_passage_ids.contains(passage_id) {
+                        existing.source_passage_ids.push(passage_id.clone());
+                    }
+                }
+                existing.confidence = existing.confidence.max(term.confidence);
+                existing.model_added |= term.model_added;
+                if existing.term_type == TermType::Other && term.term_type != TermType::Other {
+                    existing.term_type = term.term_type;
+                }
+            })
+            .or_insert(term);
+    }
+    by_label.into_values().collect()
+}
+
+pub fn claim_kind_from_label(label: &str) -> ClaimKind {
+    match normalize_label(label).as_str() {
+        "atomic" => ClaimKind::Atomic,
+        "conditional" => ClaimKind::Conditional,
+        "definition" => ClaimKind::Definition,
+        "modal" => ClaimKind::Modal,
+        "normative" => ClaimKind::Normative,
+        "universal" => ClaimKind::Universal,
+        _ => ClaimKind::Unknown,
+    }
+}
+
+pub fn claim_role_from_label(label: &str) -> ClaimRole {
+    match normalize_label(label).as_str() {
+        "main_claim" | "mainclaim" => ClaimRole::MainClaim,
+        "premise" => ClaimRole::Premise,
+        "conclusion" => ClaimRole::Conclusion,
+        "definition" => ClaimRole::Definition,
+        "objection" => ClaimRole::Objection,
+        "reply" => ClaimRole::Reply,
+        "example" => ClaimRole::Example,
+        "background" => ClaimRole::Background,
+        "qualification" => ClaimRole::Qualification,
+        _ => ClaimRole::Unknown,
+    }
+}
+
+pub fn relation_kind_from_label(label: &str) -> Option<RelationKind> {
+    match normalize_label(label).as_str() {
+        "supports" => Some(RelationKind::Supports),
+        "contradicts" => Some(RelationKind::Contradicts),
+        "generalizes" => Some(RelationKind::Generalizes),
+        "specializes" => Some(RelationKind::Specializes),
+        "variant_of" | "variantof" => Some(RelationKind::VariantOf),
+        _ => None,
+    }
+}
+
+fn normalize_label(label: &str) -> String {
+    label.trim().to_ascii_lowercase().replace(['-', ' '], "_")
+}
+
+fn provider_metadata(
+    model_id: &str,
+    backend: &str,
+    model_bundle_dir: &std::path::Path,
+    auto_download: bool,
+    task_category: &str,
+) -> BTreeMap<String, Value> {
+    let mut metadata = BTreeMap::new();
+    metadata.insert("modelId".to_string(), Value::String(model_id.to_string()));
+    metadata.insert("backend".to_string(), Value::String(backend.to_string()));
+    metadata.insert(
+        "modelBundleDir".to_string(),
+        Value::String(model_bundle_dir.to_string_lossy().into_owned()),
+    );
+    metadata.insert("autoDownloadModels".to_string(), Value::Bool(auto_download));
+    metadata.insert(
+        "taskCategory".to_string(),
+        Value::String(task_category.to_string()),
+    );
+    metadata
 }
 
 fn reconstruct_arguments(

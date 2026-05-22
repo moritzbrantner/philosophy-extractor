@@ -56,6 +56,7 @@ impl FileArtifactStore {
             path: path.to_string_lossy().into_owned(),
             provider: envelope.provider.clone(),
             provider_version: envelope.provider_version.clone(),
+            metadata: envelope.metadata.clone(),
         })
     }
 

@@ -23,4 +23,8 @@ philosophy-extractor-schema = { path = "packages/schema" }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 sha2 = "0.10.9"
+text-core = { path = "../rust-packages/crates/text/text-core" }
+text-embeddings = { path = "../rust-packages/crates/text/text-embeddings" }
+text-linguistics = { path = "../rust-packages/crates/text/text-linguistics" }
+text-retrieval = { path = "../rust-packages/crates/text/text-retrieval" }
 thiserror = "2.0.17"

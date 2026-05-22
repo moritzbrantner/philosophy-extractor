@@ -7,6 +7,10 @@ edition.workspace = true
 name = "philosophy-extractor"
 path = "src/main.rs"
 
+[features]
+default = []
+local-models = ["philosophy-extractor/local-models"]
+
 [dependencies]
 clap.workspace = true
 philosophy-extractor.workspace = true

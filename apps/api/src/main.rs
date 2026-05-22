@@ -1,5 +1,6 @@
 use philosophy_extractor::{
-    ExtractionDocument, PhilosophyExtractor, PipelineConfig, PipelineStage,
+    ClassificationBackendConfig, EmbeddingBackendConfig, ExtractionDocument, NlpMode,
+    PhilosophyExtractor, PipelineConfig, PipelineStage, TermExtractionBackendConfig,
 };
 use serde_json::Value;
 use std::io::{Read, Write};
@@ -82,6 +83,42 @@ fn parse_extract_request(
             if let Some(path) = config_value.get("artifactsDir").and_then(Value::as_str) {
                 config.artifact_dir = path.into();
             }
+            if let Some(mode) = config_value.get("nlpMode").and_then(Value::as_str) {
+                config.nlp_mode = parse_nlp_mode(mode)?;
+                if config.nlp_mode == NlpMode::LocalModels {
+                    config.auto_download_models = true;
+                }
+            }
+            if let Some(path) = config_value.get("modelBundleDir").and_then(Value::as_str) {
+                config.model_bundle_dir = path.into();
+            }
+            if let Some(auto_download) = config_value
+                .get("autoDownloadModels")
+                .and_then(Value::as_bool)
+            {
+                config.auto_download_models = auto_download;
+            }
+            if let Some(model) = config_value.get("embeddingModel").and_then(Value::as_str) {
+                config.embedding_model = model.to_string();
+            }
+            if let Some(model) = config_value.get("nerModel").and_then(Value::as_str) {
+                config.ner_model = model.to_string();
+            }
+            if let Some(backend) = config_value.get("embeddingBackend").and_then(Value::as_str) {
+                config.embedding_backend = parse_embedding_backend(backend)?;
+            }
+            if let Some(backend) = config_value
+                .get("termExtractionBackend")
+                .and_then(Value::as_str)
+            {
+                config.term_extraction_backend = parse_term_extraction_backend(backend)?;
+            }
+            if let Some(backend) = config_value
+                .get("classificationBackend")
+                .and_then(Value::as_str)
+            {
+                config.classification_backend = parse_classification_backend(backend)?;
+            }
         }
         return Ok((document, config));
     }
@@ -98,6 +135,44 @@ fn parse_extract_request(
         },
         PipelineConfig::default(),
     ))
+}
+
+fn parse_nlp_mode(value: &str) -> Result<NlpMode, Box<dyn std::error::Error>> {
+    match value {
+        "heuristic" => Ok(NlpMode::Heuristic),
+        "local-models" | "local_models" => Ok(NlpMode::LocalModels),
+        _ => Err(format!("unknown nlp mode '{value}'").into()),
+    }
+}
+
+fn parse_embedding_backend(
+    value: &str,
+) -> Result<EmbeddingBackendConfig, Box<dyn std::error::Error>> {
+    match value {
+        "deterministic" => Ok(EmbeddingBackendConfig::Deterministic),
+        "text-retrieval" | "text_retrieval" => Ok(EmbeddingBackendConfig::TextRetrieval),
+        _ => Err(format!("unknown embedding backend '{value}'").into()),
+    }
+}
+
+fn parse_term_extraction_backend(
+    value: &str,
+) -> Result<TermExtractionBackendConfig, Box<dyn std::error::Error>> {
+    match value {
+        "heuristic" => Ok(TermExtractionBackendConfig::Heuristic),
+        "text-linguistics" | "text_linguistics" => Ok(TermExtractionBackendConfig::TextLinguistics),
+        _ => Err(format!("unknown term extraction backend '{value}'").into()),
+    }
+}
+
+fn parse_classification_backend(
+    value: &str,
+) -> Result<ClassificationBackendConfig, Box<dyn std::error::Error>> {
+    match value {
+        "heuristic" => Ok(ClassificationBackendConfig::Heuristic),
+        "text-linguistics" | "text_linguistics" => Ok(ClassificationBackendConfig::TextLinguistics),
+        _ => Err(format!("unknown classification backend '{value}'").into()),
+    }
 }
 
 fn parse_stage(value: &str) -> Result<PipelineStage, Box<dyn std::error::Error>> {
@@ -155,7 +230,15 @@ mod tests {
                 },
                 "config": {
                     "stageThrough": "cluster",
-                    "persistArtifacts": false
+                    "persistArtifacts": false,
+                    "nlpMode": "local-models",
+                    "modelBundleDir": ".models",
+                    "autoDownloadModels": false,
+                    "embeddingBackend": "text-retrieval",
+                    "termExtractionBackend": "text-linguistics",
+                    "classificationBackend": "text-linguistics",
+                    "embeddingModel": "sentence-transformers/all-MiniLM-L6-v2",
+                    "nerModel": "dslim/bert-base-NER"
                 }
             }"#,
         )
@@ -164,6 +247,22 @@ mod tests {
         assert_eq!(document.id.as_deref(), Some("doc-json"));
         assert_eq!(config.stage_through, Some(PipelineStage::Cluster));
         assert!(!config.persist_artifacts);
+        assert_eq!(config.nlp_mode, NlpMode::LocalModels);
+        assert_eq!(config.model_bundle_dir, std::path::PathBuf::from(".models"));
+        assert!(!config.auto_download_models);
+        assert_eq!(
+            config.embedding_backend,
+            EmbeddingBackendConfig::TextRetrieval
+        );
+        assert_eq!(
+            config.term_extraction_backend,
+            TermExtractionBackendConfig::TextLinguistics
+        );
+        assert_eq!(
+            config.classification_backend,
+            ClassificationBackendConfig::TextLinguistics
+        );
+        assert_eq!(config.ner_model, "dslim/bert-base-NER");
     }
 
     #[test]

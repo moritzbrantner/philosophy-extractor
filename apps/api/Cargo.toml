@@ -3,6 +3,10 @@ name = "philosophy-extractor-api"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = []
+local-models = ["philosophy-extractor/local-models"]
+
 [dependencies]
 philosophy-extractor.workspace = true
 philosophy-extractor-schema.workspace = true
