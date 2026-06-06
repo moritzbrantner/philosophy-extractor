@@ -19,12 +19,12 @@ It targets Truth Engine's unified worldview contract:
 6. `classify_roles`: assign argument roles to claims.
 7. `extract_terms`: extract local term candidates and mark them for review.
 8. `reconstruct_arguments`: link premises, conclusions, support, and attack candidates.
-9. `normalize_propositions`: canonicalize proposition text, deduplicate, and filter by confidence.
+9. `normalize_propositions`: canonicalize proposition text, conservatively deduplicate, score, rank, and filter by confidence.
 10. `formalize`: create schema-validated formalization candidates.
 11. `evaluate`: emit Lean-oriented evaluation artifacts.
 12. `worldview`: emit a Truth Engine-compatible unified worldview.
 
-The default CLI output includes the worldview, candidates, diagnostics, artifact references, and per-stage summaries. Use `--worldview-only` when writing a payload intended for direct Truth Engine import.
+The default CLI output includes the worldview, candidates, candidate index, diagnostics, artifact references, and per-stage summaries. Use `--worldview-only` when writing a payload intended for direct Truth Engine import.
 
 Every run persists reviewable JSON artifacts by default under `.artifacts/{run_id}`:
 
@@ -38,6 +38,7 @@ manifest.json
 06_claim_roles.json
 07_terms.json
 08_arguments.json
+09_candidate_index.json
 09_normalized_propositions.json
 10_formalizations.json
 11_evaluations.json
@@ -169,4 +170,4 @@ docker compose up --build api
 
 ## Notes
 
-The current extractor is deterministic and heuristic. It is designed as a reviewable first pass: generated propositions are marked with `reviewRequired: true`, source fragment ids are preserved, and relation notes explain why each relation was inferred.
+The current extractor is deterministic and heuristic. It is designed as a reviewable first pass: generated propositions are marked with `reviewRequired: true`, source fragment ids are preserved, candidate index entries expose score breakdowns, and relation notes explain why each relation was inferred. Exact and normalized-fingerprint duplicates are merged conservatively; semantic near-duplicates are retained as reviewable `variant_of` relations.

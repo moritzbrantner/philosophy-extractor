@@ -60,6 +60,26 @@ impl FileArtifactStore {
         })
     }
 
+    pub fn write_named_stage<T: Serialize>(
+        &self,
+        run_id: &str,
+        file_name: &str,
+        artifact_id: String,
+        envelope: &ArtifactEnvelope<T>,
+    ) -> Result<ArtifactRef, ArtifactStoreError> {
+        let run_dir = self.ensure_run_dir(run_id)?;
+        let path = run_dir.join(file_name);
+        write_json(&path, envelope)?;
+        Ok(ArtifactRef {
+            id: artifact_id,
+            stage: envelope.stage,
+            path: path.to_string_lossy().into_owned(),
+            provider: envelope.provider.clone(),
+            provider_version: envelope.provider_version.clone(),
+            metadata: envelope.metadata.clone(),
+        })
+    }
+
     pub fn write_manifest(&self, run: &PipelineRun) -> Result<(), ArtifactStoreError> {
         let run_dir = self.ensure_run_dir(&run.run_id)?;
         write_json(&run_dir.join("manifest.json"), run)

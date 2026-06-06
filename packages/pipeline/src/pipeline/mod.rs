@@ -1,18 +1,19 @@
 mod extract;
 mod ingest;
 mod normalize;
+mod rank;
 mod relate;
 mod segment;
 mod worldview;
 
 use crate::model::{
-    ArgumentCandidate, ArgumentRoleLink, ArtifactEnvelope, ArtifactRef, ClaimCandidate, ClaimKind,
-    ClaimRole, ExtractionDocument, ExtractionResponse, FormalEvaluation, FormalEvaluationStatus,
-    FormalLogicAst, FormalizationCandidate, FormalizationStatus, IngestedDocument,
-    NormalizedProposition, Passage, PassageCluster, PassageEmbedding, PipelineDiagnostic,
-    PipelineRun, PipelineRunConfig, PipelineStage, PropositionCandidate, RelationCandidate,
-    RelationKind, SourceFragment, SourceOffset, StageSummary, TermCandidate, TermType,
-    UnifiedWorldviewV10,
+    ArgumentCandidate, ArgumentRoleLink, ArtifactEnvelope, ArtifactRef, CandidateIndexEntry,
+    ClaimCandidate, ClaimKind, ClaimRole, ExtractionDocument, ExtractionResponse, FormalEvaluation,
+    FormalEvaluationStatus, FormalLogicAst, FormalizationCandidate, FormalizationStatus,
+    IngestedDocument, NormalizedProposition, Passage, PassageCluster, PassageEmbedding,
+    PipelineDiagnostic, PipelineRun, PipelineRunConfig, PipelineStage, PropositionCandidate,
+    RelationCandidate, RelationKind, SourceFragment, SourceOffset, StageSummary, TermCandidate,
+    TermType, UnifiedWorldviewV10,
 };
 use philosophy_extractor_artifact_store::{ArtifactStoreError, FileArtifactStore, artifact_id};
 use philosophy_extractor_model_providers::{
@@ -359,12 +360,48 @@ impl PhilosophyExtractor {
             return self.partial_response(run_id, artifacts, diagnostics, stages, &document);
         }
 
-        let candidates = normalize::normalize_candidates(
+        let mut candidates = normalize::normalize_candidates(
             &fragments,
             raw_candidates,
             &self.config,
             &mut diagnostics,
         );
+        let ranking_relations = if self.config.include_relations {
+            relation_candidates_for(&candidates, &self.config)
+        } else {
+            Vec::new()
+        };
+        let ranking_index = rank::score_candidates(
+            &candidates,
+            &passages,
+            &role_output.roles,
+            &ranking_relations,
+        );
+        rank::add_rank_metadata(&mut candidates, &ranking_index);
+        candidates = rank::rank_candidates(candidates, &ranking_index);
+        if let Some(max) = self.config.max_propositions {
+            candidates.truncate(max);
+        }
+
+        let mut relations = if self.config.include_relations {
+            relation_candidates_for(&candidates, &self.config)
+        } else {
+            Vec::new()
+        };
+        if self.config.include_relations {
+            relations.extend(argument_relations(&arguments));
+        }
+        add_variant_diagnostics(&relations, &mut diagnostics);
+
+        let mut candidate_index =
+            rank::score_candidates(&candidates, &passages, &role_output.roles, &relations);
+        rank::add_rank_metadata(&mut candidates, &candidate_index);
+        candidates = rank::rank_candidates(candidates, &candidate_index);
+        candidate_index =
+            rank::score_candidates(&candidates, &passages, &role_output.roles, &relations);
+        rank::add_rank_metadata(&mut candidates, &candidate_index);
+        add_rank_diagnostics(&candidate_index, &mut diagnostics);
+
         let normalized_propositions = normalized_propositions(&candidates, &role_output.roles);
         persist_stage(
             store.as_ref(),
@@ -382,6 +419,19 @@ impl PhilosophyExtractor {
             output_count: candidates.len(),
             diagnostics: diagnostics.clone(),
         });
+        persist_named_stage(
+            store.as_ref(),
+            &run_id,
+            "09_candidate_index.json",
+            format!("{run_id}_candidate_index"),
+            PipelineStage::NormalizePropositions,
+            "local-candidate-quality-ranker",
+            "heuristic-rank-v1",
+            vec![artifact_id(&run_id, PipelineStage::NormalizePropositions)],
+            Vec::new(),
+            &candidate_index,
+            &mut artifacts,
+        )?;
         if should_stop(stage_through, PipelineStage::NormalizePropositions) {
             return self.partial_response(run_id, artifacts, diagnostics, stages, &document);
         }
@@ -428,18 +478,6 @@ impl PhilosophyExtractor {
             return self.partial_response(run_id, artifacts, diagnostics, stages, &document);
         }
 
-        let relations = if self.config.include_relations {
-            let mut relations = relate::infer_relations(&candidates);
-            if self.config.embedding_backend == EmbeddingBackendConfig::TextRetrieval
-                || self.config.nlp_mode == NlpMode::LocalModels
-            {
-                relations = relate::rerank_relations_with_text_retrieval(&candidates, relations);
-            }
-            relations.extend(argument_relations(&arguments));
-            relations
-        } else {
-            Vec::new()
-        };
         stages.push(StageSummary {
             name: "relate".to_string(),
             output_count: relations.len(),
@@ -484,6 +522,7 @@ impl PhilosophyExtractor {
             provider: "philosophy-extractor".to_string(),
             worldview,
             artifacts,
+            candidate_index,
             candidates,
             diagnostics,
             stages,
@@ -503,6 +542,7 @@ impl PhilosophyExtractor {
             provider: "philosophy-extractor".to_string(),
             worldview: empty_worldview(document, &self.config),
             artifacts,
+            candidate_index: Vec::new(),
             candidates: Vec::new(),
             diagnostics,
             stages,
@@ -533,6 +573,66 @@ fn empty_claim_candidates_diagnostic(candidates: &[ClaimCandidate]) -> Vec<Pipel
         }]
     } else {
         Vec::new()
+    }
+}
+
+fn relation_candidates_for(
+    candidates: &[PropositionCandidate],
+    config: &PipelineConfig,
+) -> Vec<RelationCandidate> {
+    let mut relations = relate::infer_relations(candidates);
+    relations.extend(rank::infer_variant_relations(candidates));
+    if config.embedding_backend == EmbeddingBackendConfig::TextRetrieval
+        || config.nlp_mode == NlpMode::LocalModels
+    {
+        relations = relate::rerank_relations_with_text_retrieval(candidates, relations);
+    }
+    relations
+}
+
+fn add_variant_diagnostics(
+    relations: &[RelationCandidate],
+    diagnostics: &mut Vec<PipelineDiagnostic>,
+) {
+    for relation in relations
+        .iter()
+        .filter(|relation| relation.kind == RelationKind::VariantOf)
+    {
+        diagnostics.push(PipelineDiagnostic {
+            code: "semantic_variant_detected".to_string(),
+            severity: "info".to_string(),
+            message: format!(
+                "Candidates '{}' and '{}' were retained as reviewable semantic variants.",
+                relation.from_proposition_id, relation.to_proposition_id
+            ),
+            target_id: Some(relation.from_proposition_id.clone()),
+        });
+    }
+}
+
+fn add_rank_diagnostics(
+    candidate_index: &[CandidateIndexEntry],
+    diagnostics: &mut Vec<PipelineDiagnostic>,
+) {
+    for entry in candidate_index {
+        for reason in &entry.score_breakdown.reasons {
+            if matches!(
+                reason.as_str(),
+                "candidate_ranked_lower_due_to_low_philosophical_score"
+                    | "candidate_ranked_higher_due_to_argument_role"
+                    | "candidate_ranked_higher_due_to_relation_centrality"
+            ) {
+                diagnostics.push(PipelineDiagnostic {
+                    code: reason.clone(),
+                    severity: "info".to_string(),
+                    message: format!(
+                        "Candidate '{}' rank reason: {}.",
+                        entry.proposition_id, reason
+                    ),
+                    target_id: Some(entry.proposition_id.clone()),
+                });
+            }
+        }
     }
 }
 
@@ -608,6 +708,36 @@ fn persist_stage_with_metadata<T: Serialize>(
             payload,
         };
         artifacts.push(store.write_stage(run_id, &envelope)?);
+    }
+    Ok(())
+}
+
+fn persist_named_stage<T: Serialize>(
+    store: Option<&FileArtifactStore>,
+    run_id: &str,
+    file_name: &str,
+    artifact_ref_id: String,
+    stage: PipelineStage,
+    provider: &str,
+    provider_version: &str,
+    input_artifact_ids: Vec<String>,
+    diagnostics: Vec<PipelineDiagnostic>,
+    payload: &T,
+    artifacts: &mut Vec<ArtifactRef>,
+) -> Result<(), PipelineError> {
+    if let Some(store) = store {
+        let envelope = ArtifactEnvelope {
+            run_id: run_id.to_string(),
+            stage,
+            provider: provider.to_string(),
+            provider_version: provider_version.to_string(),
+            metadata: BTreeMap::new(),
+            input_artifact_ids,
+            created_at: created_at(),
+            diagnostics,
+            payload,
+        };
+        artifacts.push(store.write_named_stage(run_id, file_name, artifact_ref_id, &envelope)?);
     }
     Ok(())
 }

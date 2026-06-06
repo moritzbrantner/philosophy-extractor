@@ -474,6 +474,42 @@ pub struct PropositionCandidate {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+pub struct CandidateScoreBreakdown {
+    pub extraction_confidence: f64,
+    pub philosophical_score: f64,
+    pub source_quality_score: f64,
+    pub specificity_score: f64,
+    pub role_score: f64,
+    pub relation_score: f64,
+    pub final_rank_score: f64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reasons: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CandidateIndexEntry {
+    pub proposition_id: String,
+    pub canonical_text: String,
+    pub claim_kind: ClaimKind,
+    pub assertion_status: AssertionStatus,
+    pub confidence: f64,
+    pub score_breakdown: CandidateScoreBreakdown,
+    pub source_fragment_ids: Vec<String>,
+    pub first_source_sequence: usize,
+    pub first_paragraph_index: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
+    pub has_negation: bool,
+    pub normalized_fingerprint: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub duplicate_source_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub variant_of_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct RelationCandidate {
     pub from_proposition_id: String,
     pub to_proposition_id: String,
@@ -584,6 +620,8 @@ pub struct ExtractionResponse {
     pub worldview: UnifiedWorldviewV10,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub artifacts: Vec<ArtifactRef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub candidate_index: Vec<CandidateIndexEntry>,
     pub candidates: Vec<PropositionCandidate>,
     pub diagnostics: Vec<PipelineDiagnostic>,
     pub stages: Vec<StageSummary>,

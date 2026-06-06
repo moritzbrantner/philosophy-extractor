@@ -1,5 +1,5 @@
 use crate::model::{PipelineDiagnostic, PropositionCandidate, SourceFragment};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use super::{PipelineConfig, normalize_canonical_text, proposition_id_for};
 
@@ -13,7 +13,7 @@ pub fn normalize_candidates(
         .iter()
         .map(|fragment| fragment.id.as_str())
         .collect::<HashSet<_>>();
-    let mut by_text: HashMap<String, PropositionCandidate> = HashMap::new();
+    let mut normalized = Vec::new();
 
     for mut candidate in candidates {
         candidate.canonical_text = normalize_canonical_text(&candidate.canonical_text);
@@ -51,27 +51,16 @@ pub fn normalize_candidates(
             continue;
         }
 
-        by_text
-            .entry(candidate.canonical_text.clone())
-            .and_modify(|existing| {
-                if candidate.confidence > existing.confidence {
-                    *existing = candidate.clone();
-                }
-            })
-            .or_insert(candidate);
+        normalized.push(candidate);
     }
 
-    let mut normalized = by_text.into_values().collect::<Vec<_>>();
+    let mut normalized = super::rank::conservative_deduplicate(normalized, diagnostics);
     normalized.sort_by(|left, right| {
-        right
-            .confidence
-            .total_cmp(&left.confidence)
+        left.source_fragment_ids
+            .first()
+            .cmp(&right.source_fragment_ids.first())
             .then_with(|| left.id.cmp(&right.id))
     });
-
-    if let Some(max) = config.max_propositions {
-        normalized.truncate(max);
-    }
 
     normalized
 }

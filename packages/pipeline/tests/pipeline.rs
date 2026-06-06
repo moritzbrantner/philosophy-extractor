@@ -1,4 +1,4 @@
-use philosophy_extractor::model::{ArtifactEnvelope, ClaimKind, Passage};
+use philosophy_extractor::model::{ArtifactEnvelope, CandidateIndexEntry, ClaimKind, Passage};
 use philosophy_extractor::{
     EmbeddingBackendConfig, ExtractionDocument, NlpMode, PhilosophyExtractor, PipelineConfig,
     PipelineStage, TermExtractionBackendConfig,
@@ -85,6 +85,136 @@ fn honors_max_propositions() {
 }
 
 #[test]
+fn ranks_philosophical_claims_above_generic_sentences() {
+    let extractor = PhilosophyExtractor::new(PipelineConfig::default());
+    let response = extractor
+        .extract(document("The meeting is scheduled. Truth is knowable."))
+        .unwrap();
+
+    assert_eq!(
+        response
+            .candidates
+            .first()
+            .map(|candidate| candidate.canonical_text.as_str()),
+        Some("Truth is knowable.")
+    );
+}
+
+#[test]
+fn merges_fingerprint_duplicates_conservatively() {
+    let extractor = PhilosophyExtractor::new(PipelineConfig::default());
+    let response = extractor
+        .extract(document("Truth is knowable. The truth is knowable."))
+        .unwrap();
+
+    assert_eq!(response.worldview.propositions.len(), 1);
+    assert_eq!(response.candidates.len(), 1);
+    assert_eq!(response.candidates[0].source_fragment_ids.len(), 2);
+    assert!(
+        response
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "fingerprint_duplicate_merged")
+    );
+}
+
+#[test]
+fn does_not_merge_semantic_variants() {
+    let extractor = PhilosophyExtractor::new(PipelineConfig::default());
+    let response = extractor
+        .extract(document(
+            "Knowledge concerns truth and reason. Knowledge concerns truth and reason itself.",
+        ))
+        .unwrap();
+
+    assert_eq!(response.candidates.len(), 2);
+    assert!(
+        response
+            .worldview
+            .relations
+            .iter()
+            .any(|relation| relation.kind == "variant_of")
+    );
+}
+
+#[test]
+fn does_not_merge_opposite_polarity_variants() {
+    let extractor = PhilosophyExtractor::new(PipelineConfig::default());
+    let response = extractor
+        .extract(document("The soul is immortal. The soul is not immortal."))
+        .unwrap();
+
+    assert_eq!(response.candidates.len(), 2);
+    assert!(
+        response
+            .worldview
+            .relations
+            .iter()
+            .any(|relation| relation.kind == "contradicts")
+    );
+    assert!(
+        !response
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "fingerprint_duplicate_merged")
+    );
+}
+
+#[test]
+fn candidate_index_contains_score_breakdown() {
+    let extractor = PhilosophyExtractor::new(PipelineConfig::default());
+    let response = extractor
+        .extract(document(
+            "Knowledge concerns truth. Justice should guide action.",
+        ))
+        .unwrap();
+
+    assert!(!response.candidate_index.is_empty());
+    for entry in &response.candidate_index {
+        assert!(entry.score_breakdown.final_rank_score > 0.0);
+        assert_ne!(entry.first_source_sequence, usize::MAX);
+        assert!(!entry.normalized_fingerprint.is_empty());
+        assert!(!entry.score_breakdown.reasons.is_empty());
+    }
+}
+
+#[test]
+fn max_propositions_uses_rank_score_order() {
+    let extractor = PhilosophyExtractor::new(PipelineConfig {
+        max_propositions: Some(1),
+        ..PipelineConfig::default()
+    });
+    let response = extractor
+        .extract(document("The meeting is scheduled. Truth is knowable."))
+        .unwrap();
+
+    assert_eq!(response.candidates.len(), 1);
+    assert_eq!(response.candidates[0].canonical_text, "Truth is knowable.");
+}
+
+#[test]
+fn candidate_index_artifact_is_written() {
+    let artifact_dir = temp_artifact_dir("candidate-index");
+    let extractor = PhilosophyExtractor::new(PipelineConfig {
+        artifact_dir: artifact_dir.clone(),
+        ..PipelineConfig::default()
+    });
+    let response = extractor
+        .extract(document(
+            "Knowledge concerns truth. Justice should guide action.",
+        ))
+        .unwrap();
+    let run_dir = artifact_dir.join(&response.run_id);
+    let envelope = serde_json::from_str::<ArtifactEnvelope<Vec<CandidateIndexEntry>>>(
+        &std::fs::read_to_string(run_dir.join("09_candidate_index.json")).unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(envelope.provider, "local-candidate-quality-ranker");
+    assert!(!envelope.payload.is_empty());
+}
+
+#[test]
 fn writes_all_mvp_artifacts() {
     let artifact_dir = temp_artifact_dir("all");
     let extractor = PhilosophyExtractor::new(PipelineConfig {
@@ -108,6 +238,7 @@ fn writes_all_mvp_artifacts() {
         "06_claim_roles.json",
         "07_terms.json",
         "08_arguments.json",
+        "09_candidate_index.json",
         "09_normalized_propositions.json",
         "10_formalizations.json",
         "11_evaluations.json",
@@ -115,7 +246,7 @@ fn writes_all_mvp_artifacts() {
     ] {
         assert!(run_dir.join(file).exists(), "missing artifact {file}");
     }
-    assert_eq!(response.artifacts.len(), 12);
+    assert_eq!(response.artifacts.len(), 13);
 }
 
 #[test]
