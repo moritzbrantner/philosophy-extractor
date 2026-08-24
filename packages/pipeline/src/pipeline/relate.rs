@@ -122,6 +122,7 @@ pub fn rerank_relations_with_text_retrieval(
                     semantic_weight: 0.75,
                     lexical_weight: 0.25,
                     rerank_window: candidates.len().min(16).max(1),
+                    rerank: false,
                 },
             );
             if let Ok(results) = index.search(&query)
