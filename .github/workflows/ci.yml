@@ -17,12 +17,6 @@ jobs:
         with:
           path: philosophy-extractor
 
-      - name: Checkout rust-packages
-        uses: actions/checkout@v4
-        with:
-          repository: moritzbrantner/rust-packages
-          path: rust-packages
-
       - name: Install system dependencies
         run: |
           if command -v apt-get >/dev/null 2>&1; then
