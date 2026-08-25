@@ -1,57 +1,24 @@
-# Local NLP Stack Development
+# Local NLP stack development
 
-The committed workspace resolves its NLP dependencies exclusively from
-crates.io at these exact releases:
+The committed workspace keeps exact crates.io requirements for its four NLP dependencies, but ordinary feature work does not require publishing an intermediate `nlp-stack` release.
 
-- `moenarch-text-core = 0.1.1`
-- `moenarch-text-embeddings = 0.1.1`
-- `moenarch-text-linguistics = 0.1.1`
-- `moenarch-text-retrieval = 0.1.1`
-
-For temporary co-development against a local `nlp-stack` checkout, supply
-uncommitted Cargo patches outside this repository. All four patched crates
-must also declare version `0.1.1`, so they satisfy the committed exact
-requirements. If the checkout has advanced to another version, stop and use a
-compatible revision of `nlp-stack`; do not loosen the consumer requirements.
-This workflow deliberately tests local changes against the released `0.1.1`
-contract.
-
-Before configuring the patches, inspect the local workspace:
+The committed `.coding-tooling.source-deps.json` pins all four packages to one exact `nlp-stack` revision. Run:
 
 ```sh
-cargo metadata \
-  --manifest-path /path/to/nlp-stack/Cargo.toml \
-  --no-deps \
-  --format-version 1
+bash scripts/source-deps activate
+bash scripts/source-deps status
 ```
 
-Confirm that `moenarch-text-core`, `moenarch-text-embeddings`,
-`moenarch-text-linguistics`, and `moenarch-text-retrieval` all report
-version `0.1.1`. Treat any mismatch as a failed local setup.
+`coding-tooling` generates the ignored `.cargo/config.toml`. When a sibling `../nlp-stack` checkout exists, activation verifies that its Git `HEAD` exactly matches the declared revision before using its crate paths. Otherwise the exact Git revision is used when the private repository is accessible.
 
-Create a local Cargo configuration file and pass it explicitly:
+All four source crates must continue to declare versions compatible with the committed `=0.1.1` requirements. A mismatch fails Cargo resolution; do not loosen the consumer requirements merely to make source mode work. Update all four declaration entries to the same reviewed revision whenever the validated NLP head changes.
 
-```toml
-# /path/outside/philosophy-extractor/nlp-stack-patches.toml
-[patch.crates-io]
-moenarch-text-core = { path = "/path/to/nlp-stack/crates/text/text-core" }
-moenarch-text-embeddings = { path = "/path/to/nlp-stack/crates/text/text-embeddings" }
-moenarch-text-linguistics = { path = "/path/to/nlp-stack/crates/text/text-linguistics" }
-moenarch-text-retrieval = { path = "/path/to/nlp-stack/crates/text/text-retrieval" }
-```
+Run normal Cargo checks while source mode is active. The resolved packages should have local or exact Git source provenance rather than crates.io provenance. Treat unused-patch warnings or revision mismatches as failed setup.
 
-Before building or testing, resolve the consumer graph with the patch
-configuration:
+Before registry-only verification, deactivate the managed override:
 
 ```sh
-cargo --config /path/outside/philosophy-extractor/nlp-stack-patches.toml metadata --format-version 1
+bash scripts/source-deps deactivate
 ```
 
-Verify that all four package entries have `"source": null` and
-`manifest_path` values inside the local `nlp-stack` checkout. Treat any
-"Patch ... was not used" warning as a failed local setup. Then invoke other
-Cargo commands with the same `--config` argument.
-
-Do not commit a `[patch.crates-io]` section, a `.cargo/config.toml` patch, a
-path/Git replacement, or its lockfile update. Remove all local overrides when
-returning to normal registry consumption.
+Do not commit the generated Cargo configuration, sibling paths, moving Git dependencies, or lockfile changes caused only by switching modes. Version bumps, crates.io publication, and registry-only cutover belong to a dedicated release task after the source graph has been proven.
