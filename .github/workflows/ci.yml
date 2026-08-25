@@ -6,6 +6,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   rust:
     name: Rust
@@ -29,13 +32,23 @@ jobs:
             $SUDO apt-get install -y cmake
           fi
 
+      - name: Require cross-repository checkout token
+        env:
+          SOURCE_REPOS_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          if [[ -z "$SOURCE_REPOS_TOKEN" ]]; then
+            echo "::error::GH_PACKAGES_TOKEN must grant contents:read to moritzbrantner/nlp-stack and moritzbrantner/coding-tooling."
+            exit 1
+          fi
+
       - name: Checkout nlp-stack source
         uses: actions/checkout@v4
         with:
           repository: moritzbrantner/nlp-stack
-          ref: b720d5ee0afad26b439a77ee4f6ffa0ea9e8f868
+          ref: 955ac9e35c8754166a83517bcff01b83b0d9dd71
           path: nlp-stack
-          token: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
+          token: ${{ secrets.GH_PACKAGES_TOKEN }}
+          persist-credentials: false
 
       - name: Checkout source tooling
         uses: actions/checkout@v4
@@ -43,7 +56,8 @@ jobs:
           repository: moritzbrantner/coding-tooling
           ref: f9133fe3ca885c2538d2fc92cd52427f4b7ab738
           path: coding-tooling
-          token: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
+          token: ${{ secrets.GH_PACKAGES_TOKEN }}
+          persist-credentials: false
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
