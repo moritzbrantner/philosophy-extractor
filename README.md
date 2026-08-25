@@ -115,6 +115,12 @@ printf 'Knowledge concerns truth. Justice should harmonize the soul.' \
   | cargo run -p philosophy-extractor-worker -- --title "Fragment" --pretty
 ```
 
+## NLP source development
+
+Normal feature work can use an exact `nlp-stack` source revision without waiting for a crates.io release. Run `bash scripts/source-deps activate` to enable the committed source declaration, and `bash scripts/source-deps deactivate` before registry-only verification. Package versions and registry coordinates remain unchanged during ordinary source work.
+
+See [docs/nlp-stack-local-development.md](docs/nlp-stack-local-development.md).
+
 ## Docker
 
 Build the API image:
