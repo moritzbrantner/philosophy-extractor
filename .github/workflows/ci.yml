@@ -45,7 +45,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: moritzbrantner/nlp-stack
-          ref: efe9379def29de33d8ab0d01e941a2c11791acf9
+          ref: 057689ca1df031d677f4afd9d65eed181c6fca06
           path: nlp-stack
           token: ${{ secrets.GH_PACKAGES_TOKEN }}
           persist-credentials: false
