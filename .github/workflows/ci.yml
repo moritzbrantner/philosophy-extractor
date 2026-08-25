@@ -35,6 +35,7 @@ jobs:
           repository: moritzbrantner/nlp-stack
           ref: b720d5ee0afad26b439a77ee4f6ffa0ea9e8f868
           path: nlp-stack
+          token: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
 
       - name: Checkout source tooling
         uses: actions/checkout@v4
@@ -42,6 +43,7 @@ jobs:
           repository: moritzbrantner/coding-tooling
           ref: f9133fe3ca885c2538d2fc92cd52427f4b7ab738
           path: coding-tooling
+          token: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
