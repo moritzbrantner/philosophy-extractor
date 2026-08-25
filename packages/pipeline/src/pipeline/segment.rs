@@ -1,7 +1,12 @@
 use crate::model::{ExtractionDocument, Passage};
 
 use super::source_document_id_for;
-use text_core::{TextProcessingOptions, split_paragraphs, split_sentence_spans};
+use text_core::{
+    TextProcessingOptions, split_paragraphs, split_sentence_spans_with_abbreviations,
+};
+
+const PHILOSOPHY_ABBREVIATIONS: &[&str] =
+    &["Phys.", "Metaph.", "Eth.", "Rep.", "Bk.", "Ch."];
 
 pub fn segment_passages(document: &ExtractionDocument) -> Vec<Passage> {
     let document_id = source_document_id_for(document);
@@ -39,7 +44,8 @@ fn sentence_spans(text: &str) -> Vec<SentenceSpan> {
     let paragraphs = split_paragraphs(text);
     let mut sentence_counts_by_paragraph = Vec::<usize>::new();
 
-    let spans = split_sentence_spans(text, &options)
+    let spans =
+        split_sentence_spans_with_abbreviations(text, &options, PHILOSOPHY_ABBREVIATIONS)
         .into_iter()
         .map(|sentence| {
             let paragraph_index = paragraphs

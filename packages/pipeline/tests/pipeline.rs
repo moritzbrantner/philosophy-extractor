@@ -296,6 +296,30 @@ fn text_core_segmentation_preserves_source_offsets() {
 }
 
 #[test]
+fn philosophy_citation_abbreviations_keep_sentence_boundaries() {
+    let artifact_dir = temp_artifact_dir("citation-segmentation");
+    let text = "Aristotle argues in Phys. III that change is actuality. Knowledge concerns truth.";
+    let extractor = PhilosophyExtractor::new(PipelineConfig {
+        artifact_dir: artifact_dir.clone(),
+        stage_through: Some(PipelineStage::Segment),
+        ..PipelineConfig::default()
+    });
+    let response = extractor.extract(document(text)).unwrap();
+    let run_dir = artifact_dir.join(&response.run_id);
+    let envelope = serde_json::from_str::<ArtifactEnvelope<Vec<Passage>>>(
+        &std::fs::read_to_string(run_dir.join("02_passages.json")).unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(envelope.payload.len(), 2);
+    assert_eq!(
+        envelope.payload[0].text,
+        "Aristotle argues in Phys. III that change is actuality."
+    );
+    assert_eq!(envelope.payload[1].text, "Knowledge concerns truth.");
+}
+
+#[test]
 fn text_retrieval_embedding_artifact_records_model_provenance() {
     let artifact_dir = temp_artifact_dir("text-retrieval-embed");
     let extractor = PhilosophyExtractor::new(PipelineConfig {

@@ -29,6 +29,29 @@ jobs:
             $SUDO apt-get install -y cmake
           fi
 
+      - name: Checkout nlp-stack source
+        uses: actions/checkout@v4
+        with:
+          repository: moritzbrantner/nlp-stack
+          ref: b720d5ee0afad26b439a77ee4f6ffa0ea9e8f868
+          path: nlp-stack
+
+      - name: Checkout source tooling
+        uses: actions/checkout@v4
+        with:
+          repository: moritzbrantner/coding-tooling
+          ref: f9133fe3ca885c2538d2fc92cd52427f4b7ab738
+          path: coding-tooling
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+
+      - name: Activate exact NLP source
+        working-directory: philosophy-extractor
+        run: ./scripts/source-deps activate
+
       - name: Install Rust
         run: |
           if ! command -v rustup >/dev/null 2>&1; then
@@ -46,8 +69,8 @@ jobs:
 
       - name: Build
         working-directory: philosophy-extractor
-        run: cargo build --workspace --locked
+        run: cargo build --workspace
 
       - name: Test
         working-directory: philosophy-extractor
-        run: cargo test --workspace --locked
+        run: cargo test --workspace
