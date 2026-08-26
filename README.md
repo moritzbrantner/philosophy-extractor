@@ -63,6 +63,14 @@ The MVP is offline-capable. Provider boundaries are in place for OpenAI Response
 
 ## Usage
 
+The current development head consumes an `nlp-stack` API that is intentionally ahead of the registry release. Activate the committed exact sibling source graph before running Cargo commands:
+
+```bash
+bash scripts/source-deps activate
+```
+
+Then run the worker normally:
+
 ```bash
 cargo run -p philosophy-extractor-worker -- path/to/text.txt --title "Nicomachean Ethics" --author Aristotle --pretty
 ```
@@ -117,13 +125,15 @@ printf 'Knowledge concerns truth. Justice should harmonize the soul.' \
 
 ## NLP source development
 
-Normal feature work can use an exact `nlp-stack` source revision without waiting for a crates.io release. Run `bash scripts/source-deps activate` to enable the committed source declaration, and `bash scripts/source-deps deactivate` before registry-only verification. Package versions and registry coordinates remain unchanged during ordinary source work.
+Normal feature work uses the exact `nlp-stack` revision recorded in `.coding-tooling.source-deps.json` without waiting for a crates.io release. `bash scripts/source-deps activate` requires the pinned sibling checkout and fails if it is missing or at the wrong revision; it never falls back to authenticated Git. Use `bash scripts/source-deps deactivate` before an explicit registry-only release check.
 
 See [docs/nlp-stack-local-development.md](docs/nlp-stack-local-development.md).
 
 ## Docker
 
-Build the API image:
+The existing Docker and Compose builds are registry/distribution paths. While development intentionally consumes an unpublished `nlp-stack` source API, those images are expected to remain behind the source workspace until an explicit release cutover publishes the compatible registry contract; ordinary feature work must not publish packages merely to make Docker consume the candidate.
+
+Once the registry contract has caught up, build the API image with:
 
 ```bash
 docker build -t philosophy-extractor .
@@ -168,7 +178,7 @@ curl -X POST http://localhost:8080/extract \
   }'
 ```
 
-The existing Compose setup can also run the API:
+The existing Compose setup can also run the API after the registry contract has caught up:
 
 ```bash
 docker compose up --build api
