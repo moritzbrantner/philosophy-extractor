@@ -1,29 +1,30 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "cargo": {
+    "localOnly": true,
     "patches": [
       {
         "package": "moenarch-text-core",
         "git": "https://github.com/moritzbrantner/nlp-stack",
-        "rev": "7bd8c1ec4f2cbe2cf18538c5046830356a087b46",
+        "rev": "057689ca1df031d677f4afd9d65eed181c6fca06",
         "localPath": "../nlp-stack/crates/text/text-core"
       },
       {
         "package": "moenarch-text-embeddings",
         "git": "https://github.com/moritzbrantner/nlp-stack",
-        "rev": "7bd8c1ec4f2cbe2cf18538c5046830356a087b46",
+        "rev": "057689ca1df031d677f4afd9d65eed181c6fca06",
         "localPath": "../nlp-stack/crates/text/text-embeddings"
       },
       {
         "package": "moenarch-text-linguistics",
         "git": "https://github.com/moritzbrantner/nlp-stack",
-        "rev": "7bd8c1ec4f2cbe2cf18538c5046830356a087b46",
+        "rev": "057689ca1df031d677f4afd9d65eed181c6fca06",
         "localPath": "../nlp-stack/crates/text/text-linguistics"
       },
       {
         "package": "moenarch-text-retrieval",
         "git": "https://github.com/moritzbrantner/nlp-stack",
-        "rev": "7bd8c1ec4f2cbe2cf18538c5046830356a087b46",
+        "rev": "057689ca1df031d677f4afd9d65eed181c6fca06",
         "localPath": "../nlp-stack/crates/text/text-retrieval"
       }
     ]
