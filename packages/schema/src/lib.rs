@@ -887,6 +887,18 @@ pub struct StageSummary {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+pub struct SourceSpanExtractionResponse {
+    pub sources: Vec<SourceDocument>,
+    pub fragments: Vec<SourceFragment>,
+    pub candidates: Vec<PropositionCandidate>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub media_evidence_revisions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<PipelineDiagnostic>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ExtractionResponse {
     pub run_id: String,
     pub provider: String,
