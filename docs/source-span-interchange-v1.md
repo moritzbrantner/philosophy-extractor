@@ -14,7 +14,7 @@ Every export has:
 - zero or more `sources`
 - zero or more `spans`
 
-The producer revision identifies the exact exporter implementation. It is not the source-content revision.
+The producer revision identifies the exact exporter implementation (for example an exact Git/build revision supplied by the caller). It is separate from both the source `revision` and the source `contentHash`.
 
 ## Source records
 
@@ -27,7 +27,7 @@ A source record owns:
 - a SHA-256 `contentHash`
 - source-specific metadata
 
-For v1, content hashes use `sha256:<64 lowercase hex digits>`. A source revision may equal its content hash when the source is content-addressed.
+For v1, content hashes use `sha256:<64 lowercase hex digits>`. `contentHash` fingerprints the verbatim source text bytes. `revision` fingerprints the exact structured representation consumed downstream, including span identity/order and locators. Changing paragraph structure, headings, transcript timing, transcript source, or other provenance-relevant structure therefore changes `revision` even when the verbatim text and `contentHash` are unchanged.
 
 A `document-search` source is one extracted document. A `youtube-corpus` source is one transcript stream, so manual captions, automatic captions, and ASR remain distinguishable even when they belong to the same video.
 
