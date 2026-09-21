@@ -1,8 +1,8 @@
 use philosophy_extractor_schema::{
-    ExtractionDocument, MEDIA_EVIDENCE_SCHEMA, MEDIA_EVIDENCE_VERSION_V1,
-    PHILOSOPHY_CORPUS_INPUT_SCHEMA, PHILOSOPHY_CORPUS_INPUT_VERSION_V1,
-    SOURCE_SPAN_INTERCHANGE_SCHEMA, SOURCE_SPAN_INTERCHANGE_VERSION_V1, MediaEvidenceBatchV1,
-    PhilosophyCorpusInputV1, SourceLocatorV1, SourceSpanBatchV1,
+    ExtractionDocument, MEDIA_EVIDENCE_SCHEMA, MEDIA_EVIDENCE_VERSION_V1, MediaEvidenceBatchV1,
+    PHILOSOPHY_CORPUS_INPUT_SCHEMA, PHILOSOPHY_CORPUS_INPUT_VERSION_V1, PhilosophyCorpusInputV1,
+    SOURCE_SPAN_INTERCHANGE_SCHEMA, SOURCE_SPAN_INTERCHANGE_VERSION_V1, SourceLocatorV1,
+    SourceSpanBatchV1,
 };
 use std::collections::HashSet;
 use std::fmt;
@@ -39,7 +39,6 @@ impl fmt::Display for SourceSpanValidationError {
 }
 
 impl std::error::Error for SourceSpanValidationError {}
-
 
 pub fn validate_philosophy_corpus_input(
     input: &PhilosophyCorpusInputV1,
@@ -118,7 +117,11 @@ pub fn validate_media_evidence_batch(
                 observation.id
             )));
         }
-        validate_optional_time(&observation.id, observation.timestamp_seconds, "OCR observation")?;
+        validate_optional_time(
+            &observation.id,
+            observation.timestamp_seconds,
+            "OCR observation",
+        )?;
         if observation
             .confidence
             .is_some_and(|value| !value.is_finite() || !(0.0..=1.0).contains(&value))
@@ -246,7 +249,9 @@ fn validate_processing_evidence(
 
 fn validate_required_id(kind: &str, id: &str) -> Result<(), SourceSpanValidationError> {
     if id.trim().is_empty() {
-        return Err(SourceSpanValidationError::new(format!("{kind} id is required")));
+        return Err(SourceSpanValidationError::new(format!(
+            "{kind} id is required"
+        )));
     }
     Ok(())
 }
