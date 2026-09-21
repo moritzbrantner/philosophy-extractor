@@ -12,7 +12,8 @@ use crate::model::{
     FormalEvaluationStatus, FormalLogicAst, FormalizationCandidate, FormalizationStatus,
     IngestedDocument, NormalizedProposition, Passage, PassageCluster, PassageEmbedding,
     PipelineDiagnostic, PipelineRun, PipelineRunConfig, PipelineStage, PropositionCandidate,
-    RelationCandidate, RelationKind, SourceFragment, SourceOffset, StageSummary, TermCandidate,
+    PhilosophyCorpusInputV1, RelationCandidate, RelationKind, SourceDocument, SourceFragment,
+    SourceLocatorV1, SourceOffset, SourceSpanExtractionResponse, StageSummary, TermCandidate,
     TermType, UnifiedWorldviewV10,
 };
 use philosophy_extractor_artifact_store::{ArtifactStoreError, FileArtifactStore, artifact_id};
@@ -150,6 +151,10 @@ pub enum PipelineError {
     Artifact(#[from] ArtifactStoreError),
     #[error("embedding provider error: {0}")]
     Embedding(String),
+    #[error("invalid corpus input: {0}")]
+    InvalidCorpusInput(String),
+    #[error("corpus serialization error: {0}")]
+    CorpusSerialization(String),
 }
 
 #[derive(Debug, Clone)]
@@ -526,6 +531,65 @@ impl PhilosophyExtractor {
             candidates,
             diagnostics,
             stages,
+        })
+    }
+
+    pub fn extract_source_spans(
+        &self,
+        input: PhilosophyCorpusInputV1,
+    ) -> Result<SourceSpanExtractionResponse, PipelineError> {
+        philosophy_extractor_source_ingestion::validate_philosophy_corpus_input(&input)
+            .map_err(|error| PipelineError::InvalidCorpusInput(error.to_string()))?;
+
+        let sources = input
+            .sources
+            .sources
+            .iter()
+            .map(|source| SourceDocument {
+                id: source.id.clone(),
+                kind: Some(source.kind.clone()),
+                title: source.title.clone(),
+                authors: source.creators.clone(),
+                language: source.language.clone(),
+                uri: source.uri.clone(),
+            })
+            .collect::<Vec<_>>();
+
+        let fragments = input
+            .sources
+            .spans
+            .iter()
+            .map(|span| {
+                let locator = serde_json::to_string(&span.locator)
+                    .map_err(|error| PipelineError::CorpusSerialization(error.to_string()))?;
+                Ok(SourceFragment {
+                    id: span.id.clone(),
+                    document_id: span.source_id.clone(),
+                    locator: Some(locator),
+                    text: Some(span.text.clone()),
+                })
+            })
+            .collect::<Result<Vec<_>, PipelineError>>()?;
+
+        let mut diagnostics = empty_fragments_diagnostic(&fragments);
+        let raw_candidates = extract::extract_candidates(&fragments);
+        let mut candidates =
+            normalize::normalize_candidates(&fragments, raw_candidates, &self.config, &mut diagnostics);
+        add_media_context(&mut candidates, &input);
+        if let Some(max) = self.config.max_propositions {
+            candidates.truncate(max);
+        }
+
+        Ok(SourceSpanExtractionResponse {
+            sources,
+            fragments,
+            candidates,
+            media_evidence_revisions: input
+                .media_evidence
+                .iter()
+                .map(|evidence| evidence.revision.clone())
+                .collect(),
+            diagnostics,
         })
     }
 
