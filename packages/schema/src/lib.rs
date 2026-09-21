@@ -718,3 +718,58 @@ pub struct ExtractionResponse {
     pub diagnostics: Vec<PipelineDiagnostic>,
     pub stages: Vec<StageSummary>,
 }
+
+
+#[cfg(test)]
+mod source_span_interchange_tests {
+    use super::*;
+
+    fn hash(ch: char) -> String {
+        format!("sha256:{}", ch.to_string().repeat(64))
+    }
+
+    #[test]
+    fn v1_serialization_matches_the_cross_repository_json_shape() {
+        let batch = SourceSpanBatchV1::new(
+            SourceProducerV1 {
+                name: "youtube-corpus".to_string(),
+                revision: "git:abc123".to_string(),
+            },
+            vec![SourceRecordV1 {
+                id: "stream-1".to_string(),
+                kind: "youtube_transcript".to_string(),
+                revision: hash('a'),
+                uri: Some("https://example.test/video".to_string()),
+                title: Some("Lecture".to_string()),
+                creators: Vec::new(),
+                language: Some("en".to_string()),
+                content_hash: hash('a'),
+                metadata: Metadata::new(),
+            }],
+            vec![SourceSpanRecordV1 {
+                id: "segment-1".to_string(),
+                source_id: "stream-1".to_string(),
+                sequence: 0,
+                text: "Knowledge concerns truth.".to_string(),
+                content_hash: hash('b'),
+                language: Some("en".to_string()),
+                locator: SourceLocatorV1::Timed {
+                    segment_index: 0,
+                    start_seconds: Some(1.25),
+                    end_seconds: Some(3.5),
+                },
+                metadata: Metadata::new(),
+            }],
+        );
+
+        let value = serde_json::to_value(batch).unwrap();
+        assert_eq!(value["schema"], SOURCE_SPAN_INTERCHANGE_SCHEMA);
+        assert_eq!(value["schemaVersion"], SOURCE_SPAN_INTERCHANGE_VERSION_V1);
+        assert_eq!(value["spans"][0]["sourceId"], "stream-1");
+        assert_eq!(value["spans"][0]["contentHash"], hash('b'));
+        assert_eq!(value["spans"][0]["locator"]["kind"], "timed");
+        assert_eq!(value["spans"][0]["locator"]["segmentIndex"], 0);
+        assert_eq!(value["spans"][0]["locator"]["startSeconds"], 1.25);
+        assert_eq!(value["spans"][0]["locator"]["endSeconds"], 3.5);
+    }
+}
