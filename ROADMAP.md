@@ -20,7 +20,7 @@ The extractor should preserve enough evidence that later worldview representatio
 
 ## Near-term milestones
 
-1. [ ] **Define a thin source/span interoperability contract.**
+1. [x] **Define a thin source/span interoperability contract.**
    - Represent source identity separately from source spans.
    - Preserve stable source ids, source revision, exact locator, text, content hash, language, and source metadata.
    - Support document locators such as page/section/paragraph and time-based locators such as YouTube transcript timestamps.
