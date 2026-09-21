@@ -76,7 +76,11 @@ pub struct SourceSpanRecordV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "kind", rename_all = "snake_case", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
 pub enum SourceLocatorV1 {
     Text {
         byte_start: usize,
@@ -722,7 +726,6 @@ pub struct ExtractionResponse {
     pub diagnostics: Vec<PipelineDiagnostic>,
     pub stages: Vec<StageSummary>,
 }
-
 
 #[cfg(test)]
 mod source_span_interchange_tests {
