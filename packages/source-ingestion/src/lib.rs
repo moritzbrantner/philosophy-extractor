@@ -120,7 +120,11 @@ fn validate_sha256(value: &str, target_id: &str) -> Result<(), SourceSpanValidat
             "{target_id} content hash must use sha256:<hex>"
         )));
     };
-    if hex.len() != 64 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+    if hex.len() != 64
+        || !hex
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+    {
         return Err(SourceSpanValidationError::new(format!(
             "{target_id} content hash is not a complete SHA-256 digest"
         )));
