@@ -84,6 +84,10 @@ pub enum SourceLocatorV1 {
         #[serde(skip_serializing_if = "Option::is_none")]
         paragraph_ordinal: Option<usize>,
         #[serde(skip_serializing_if = "Option::is_none")]
+        page: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        section: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         source_selector: Option<String>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         heading_path: Vec<String>,
