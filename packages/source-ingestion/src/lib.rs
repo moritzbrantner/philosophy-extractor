@@ -200,6 +200,8 @@ mod tests {
                     byte_start: 0,
                     byte_end: 25,
                     paragraph_ordinal: Some(0),
+                    page: None,
+                    section: None,
                     source_selector: None,
                     heading_path: Vec::new(),
                 },
