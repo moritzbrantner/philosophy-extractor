@@ -8,6 +8,179 @@ pub type Metadata = BTreeMap<String, Value>;
 pub const SOURCE_SPAN_INTERCHANGE_SCHEMA: &str = "source_span_interchange";
 pub const SOURCE_SPAN_INTERCHANGE_VERSION_V1: u32 = 1;
 
+
+pub const MEDIA_EVIDENCE_SCHEMA: &str = "media_evidence";
+pub const MEDIA_EVIDENCE_VERSION_V1: u32 = 1;
+pub const PHILOSOPHY_CORPUS_INPUT_SCHEMA: &str = "philosophy_corpus_input";
+pub const PHILOSOPHY_CORPUS_INPUT_VERSION_V1: u32 = 1;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PhilosophyCorpusInputV1 {
+    pub schema: String,
+    pub schema_version: u32,
+    pub sources: SourceSpanBatchV1,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub media_evidence: Vec<MediaEvidenceBatchV1>,
+}
+
+impl PhilosophyCorpusInputV1 {
+    pub fn new(sources: SourceSpanBatchV1, media_evidence: Vec<MediaEvidenceBatchV1>) -> Self {
+        Self {
+            schema: PHILOSOPHY_CORPUS_INPUT_SCHEMA.to_string(),
+            schema_version: PHILOSOPHY_CORPUS_INPUT_VERSION_V1,
+            sources,
+            media_evidence,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaEvidenceBatchV1 {
+    pub schema: String,
+    pub schema_version: u32,
+    pub producer: MediaEvidenceProducerV1,
+    pub video: MediaEvidenceVideoV1,
+    pub revision: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scenes: Vec<SceneEvidenceV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ocr_observations: Vec<OcrObservationEvidenceV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ocr_tracks: Vec<OcrTrackEvidenceV1>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sponsorblock: Option<SponsorBlockEvidenceV1>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaEvidenceProducerV1 {
+    pub name: String,
+    pub revision: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaEvidenceVideoV1 {
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub youtube_id: Option<String>,
+    pub source_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessingEvidenceV1 {
+    pub run_id: String,
+    pub processor: String,
+    pub processor_version: String,
+    pub model: String,
+    pub model_version: String,
+    pub input_hash: String,
+    pub config_hash: String,
+    pub processing_config: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneEvidenceV1 {
+    pub id: String,
+    pub scene_index: u64,
+    pub start_frame: u64,
+    pub end_frame: u64,
+    pub start_seconds: f64,
+    pub end_seconds: f64,
+    pub metadata: Value,
+    pub provenance: ProcessingEvidenceV1,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct OcrObservationEvidenceV1 {
+    pub id: String,
+    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frame_index: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timestamp_seconds: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scene_index: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub region: Option<MediaBoundingBoxV1>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<f64>,
+    pub attributes: Value,
+    pub provenance: ProcessingEvidenceV1,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaBoundingBoxV1 {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct OcrTrackEvidenceV1 {
+    pub id: String,
+    pub text: String,
+    pub role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    pub sample_count: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_frame: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_frame: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_seconds: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_seconds: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub region: Option<MediaBoundingBoxV1>,
+    pub metadata: Value,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub observation_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scene_ids: Vec<String>,
+    pub provenance: ProcessingEvidenceV1,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SponsorBlockEvidenceV1 {
+    pub snapshot_id: String,
+    pub response_hash: String,
+    pub data_license: String,
+    pub attribution: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub categories: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub segments: Vec<SponsorBlockSegmentEvidenceV1>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SponsorBlockSegmentEvidenceV1 {
+    pub uuid: String,
+    pub category: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_type: Option<String>,
+    pub start_seconds: f64,
+    pub end_seconds: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub video_duration: Option<f64>,
+    pub metadata: Value,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceSpanBatchV1 {
