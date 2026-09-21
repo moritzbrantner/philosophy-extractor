@@ -8,7 +8,6 @@ pub type Metadata = BTreeMap<String, Value>;
 pub const SOURCE_SPAN_INTERCHANGE_SCHEMA: &str = "source_span_interchange";
 pub const SOURCE_SPAN_INTERCHANGE_VERSION_V1: u32 = 1;
 
-
 pub const MEDIA_EVIDENCE_SCHEMA: &str = "media_evidence";
 pub const MEDIA_EVIDENCE_VERSION_V1: u32 = 1;
 pub const PHILOSOPHY_CORPUS_INPUT_SCHEMA: &str = "philosophy_corpus_input";
