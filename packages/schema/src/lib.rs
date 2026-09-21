@@ -5,6 +5,98 @@ use std::path::PathBuf;
 
 pub type Metadata = BTreeMap<String, Value>;
 
+pub const SOURCE_SPAN_INTERCHANGE_SCHEMA: &str = "source_span_interchange";
+pub const SOURCE_SPAN_INTERCHANGE_VERSION_V1: u32 = 1;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceSpanBatchV1 {
+    pub schema: String,
+    pub schema_version: u32,
+    pub producer: SourceProducerV1,
+    pub sources: Vec<SourceRecordV1>,
+    pub spans: Vec<SourceSpanRecordV1>,
+}
+
+impl SourceSpanBatchV1 {
+    pub fn new(
+        producer: SourceProducerV1,
+        sources: Vec<SourceRecordV1>,
+        spans: Vec<SourceSpanRecordV1>,
+    ) -> Self {
+        Self {
+            schema: SOURCE_SPAN_INTERCHANGE_SCHEMA.to_string(),
+            schema_version: SOURCE_SPAN_INTERCHANGE_VERSION_V1,
+            producer,
+            sources,
+            spans,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceProducerV1 {
+    pub name: String,
+    pub revision: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceRecordV1 {
+    pub id: String,
+    pub kind: String,
+    pub revision: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uri: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub creators: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    pub content_hash: String,
+    #[serde(default, skip_serializing_if = "Metadata::is_empty")]
+    pub metadata: Metadata,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceSpanRecordV1 {
+    pub id: String,
+    pub source_id: String,
+    pub sequence: u64,
+    pub text: String,
+    pub content_hash: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    pub locator: SourceLocatorV1,
+    #[serde(default, skip_serializing_if = "Metadata::is_empty")]
+    pub metadata: Metadata,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", rename_all = "snake_case", rename_all_fields = "camelCase")]
+pub enum SourceLocatorV1 {
+    Text {
+        byte_start: usize,
+        byte_end: usize,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        paragraph_ordinal: Option<usize>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        source_selector: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        heading_path: Vec<String>,
+    },
+    Timed {
+        segment_index: u64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        start_seconds: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        end_seconds: Option<f64>,
+    },
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtractionDocument {
