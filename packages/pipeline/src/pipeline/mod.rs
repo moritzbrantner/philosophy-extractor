@@ -11,8 +11,8 @@ use crate::model::{
     ClaimCandidate, ClaimKind, ClaimRole, ExtractionDocument, ExtractionResponse, FormalEvaluation,
     FormalEvaluationStatus, FormalLogicAst, FormalizationCandidate, FormalizationStatus,
     IngestedDocument, NormalizedProposition, Passage, PassageCluster, PassageEmbedding,
-    PipelineDiagnostic, PipelineRun, PipelineRunConfig, PipelineStage, PropositionCandidate,
-    PhilosophyCorpusInputV1, RelationCandidate, RelationKind, SourceDocument, SourceFragment,
+    PhilosophyCorpusInputV1, PipelineDiagnostic, PipelineRun, PipelineRunConfig, PipelineStage,
+    PropositionCandidate, RelationCandidate, RelationKind, SourceDocument, SourceFragment,
     SourceLocatorV1, SourceOffset, SourceSpanExtractionResponse, StageSummary, TermCandidate,
     TermType, UnifiedWorldviewV10,
 };
@@ -573,8 +573,12 @@ impl PhilosophyExtractor {
 
         let mut diagnostics = empty_fragments_diagnostic(&fragments);
         let raw_candidates = extract::extract_candidates(&fragments);
-        let mut candidates =
-            normalize::normalize_candidates(&fragments, raw_candidates, &self.config, &mut diagnostics);
+        let mut candidates = normalize::normalize_candidates(
+            &fragments,
+            raw_candidates,
+            &self.config,
+            &mut diagnostics,
+        );
         add_media_context(&mut candidates, &input);
         if let Some(max) = self.config.max_propositions {
             candidates.truncate(max);
@@ -700,7 +704,6 @@ fn add_rank_diagnostics(
     }
 }
 
-
 fn add_media_context(candidates: &mut [PropositionCandidate], input: &PhilosophyCorpusInputV1) {
     let spans_by_id = input
         .sources
@@ -732,7 +735,9 @@ fn add_media_context(candidates: &mut [PropositionCandidate], input: &Philosophy
                 evidence
                     .scenes
                     .iter()
-                    .filter(|scene| ranges_overlap(start, end, scene.start_seconds, scene.end_seconds))
+                    .filter(|scene| {
+                        ranges_overlap(start, end, scene.start_seconds, scene.end_seconds)
+                    })
                     .map(|scene| {
                         serde_json::json!({
                             "id": scene.id,
@@ -1794,7 +1799,6 @@ pub(crate) fn relation_id_for(relation: &RelationCandidate) -> String {
     }
 }
 
-
 #[cfg(test)]
 mod corpus_input_tests {
     use super::*;
@@ -1936,10 +1940,7 @@ mod corpus_input_tests {
         let contexts = candidate.metadata["mediaContext"].as_array().unwrap();
         assert_eq!(contexts[0]["scenes"][0]["id"], "scene-1");
         assert_eq!(contexts[0]["ocrTracks"][0]["id"], "ocr-1");
-        assert_eq!(
-            contexts[0]["sponsorBlockSegments"][0]["category"],
-            "intro"
-        );
+        assert_eq!(contexts[0]["sponsorBlockSegments"][0]["category"], "intro");
         assert_eq!(
             contexts[0]["sponsorBlockProvenance"]["dataLicense"],
             "CC BY-NC-SA 4.0"
