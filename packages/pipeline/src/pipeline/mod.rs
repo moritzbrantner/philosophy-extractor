@@ -11,8 +11,9 @@ use crate::model::{
     ClaimCandidate, ClaimKind, ClaimRole, ExtractionDocument, ExtractionResponse, FormalEvaluation,
     FormalEvaluationStatus, FormalLogicAst, FormalizationCandidate, FormalizationStatus,
     IngestedDocument, NormalizedProposition, Passage, PassageCluster, PassageEmbedding,
-    PipelineDiagnostic, PipelineRun, PipelineRunConfig, PipelineStage, PropositionCandidate,
-    RelationCandidate, RelationKind, SourceFragment, SourceOffset, StageSummary, TermCandidate,
+    PhilosophyCorpusInputV1, PipelineDiagnostic, PipelineRun, PipelineRunConfig, PipelineStage,
+    PropositionCandidate, RelationCandidate, RelationKind, SourceDocument, SourceFragment,
+    SourceLocatorV1, SourceOffset, SourceSpanExtractionResponse, StageSummary, TermCandidate,
     TermType, UnifiedWorldviewV10,
 };
 use philosophy_extractor_artifact_store::{ArtifactStoreError, FileArtifactStore, artifact_id};
@@ -150,6 +151,10 @@ pub enum PipelineError {
     Artifact(#[from] ArtifactStoreError),
     #[error("embedding provider error: {0}")]
     Embedding(String),
+    #[error("invalid corpus input: {0}")]
+    InvalidCorpusInput(String),
+    #[error("corpus serialization error: {0}")]
+    CorpusSerialization(String),
 }
 
 #[derive(Debug, Clone)]
@@ -529,6 +534,69 @@ impl PhilosophyExtractor {
         })
     }
 
+    pub fn extract_source_spans(
+        &self,
+        input: PhilosophyCorpusInputV1,
+    ) -> Result<SourceSpanExtractionResponse, PipelineError> {
+        philosophy_extractor_source_ingestion::validate_philosophy_corpus_input(&input)
+            .map_err(|error| PipelineError::InvalidCorpusInput(error.to_string()))?;
+
+        let sources = input
+            .sources
+            .sources
+            .iter()
+            .map(|source| SourceDocument {
+                id: source.id.clone(),
+                kind: Some(source.kind.clone()),
+                title: source.title.clone(),
+                authors: source.creators.clone(),
+                language: source.language.clone(),
+                uri: source.uri.clone(),
+            })
+            .collect::<Vec<_>>();
+
+        let fragments = input
+            .sources
+            .spans
+            .iter()
+            .map(|span| {
+                let locator = serde_json::to_string(&span.locator)
+                    .map_err(|error| PipelineError::CorpusSerialization(error.to_string()))?;
+                Ok(SourceFragment {
+                    id: span.id.clone(),
+                    document_id: span.source_id.clone(),
+                    locator: Some(locator),
+                    text: Some(span.text.clone()),
+                })
+            })
+            .collect::<Result<Vec<_>, PipelineError>>()?;
+
+        let mut diagnostics = empty_fragments_diagnostic(&fragments);
+        let raw_candidates = extract::extract_candidates(&fragments);
+        let mut candidates = normalize::normalize_candidates(
+            &fragments,
+            raw_candidates,
+            &self.config,
+            &mut diagnostics,
+        );
+        add_media_context(&mut candidates, &input);
+        if let Some(max) = self.config.max_propositions {
+            candidates.truncate(max);
+        }
+
+        Ok(SourceSpanExtractionResponse {
+            sources,
+            fragments,
+            candidates,
+            media_evidence_revisions: input
+                .media_evidence
+                .iter()
+                .map(|evidence| evidence.revision.clone())
+                .collect(),
+            diagnostics,
+        })
+    }
+
     fn partial_response(
         &self,
         run_id: String,
@@ -634,6 +702,159 @@ fn add_rank_diagnostics(
             }
         }
     }
+}
+
+fn add_media_context(candidates: &mut [PropositionCandidate], input: &PhilosophyCorpusInputV1) {
+    let spans_by_id = input
+        .sources
+        .spans
+        .iter()
+        .map(|span| (span.id.as_str(), span))
+        .collect::<HashMap<_, _>>();
+    let evidence_by_video = input
+        .media_evidence
+        .iter()
+        .map(|evidence| (evidence.video.id.as_str(), evidence))
+        .collect::<HashMap<_, _>>();
+
+    for candidate in candidates {
+        let mut contexts = Vec::new();
+        for fragment_id in &candidate.source_fragment_ids {
+            let Some(span) = spans_by_id.get(fragment_id.as_str()) else {
+                continue;
+            };
+            let Some(video_id) = span.metadata.get("videoId").and_then(Value::as_str) else {
+                continue;
+            };
+            let Some(evidence) = evidence_by_video.get(video_id) else {
+                continue;
+            };
+
+            let bounds = timed_locator_bounds(&span.locator);
+            let scenes = bounds.map_or_else(Vec::new, |(start, end)| {
+                evidence
+                    .scenes
+                    .iter()
+                    .filter(|scene| {
+                        ranges_overlap(start, end, scene.start_seconds, scene.end_seconds)
+                    })
+                    .map(|scene| {
+                        serde_json::json!({
+                            "id": scene.id,
+                            "sceneIndex": scene.scene_index,
+                            "startSeconds": scene.start_seconds,
+                            "endSeconds": scene.end_seconds,
+                            "processor": scene.provenance.processor,
+                            "processorVersion": scene.provenance.processor_version,
+                            "model": scene.provenance.model,
+                            "modelVersion": scene.provenance.model_version,
+                        })
+                    })
+                    .collect()
+            });
+            let ocr_tracks = bounds.map_or_else(Vec::new, |(start, end)| {
+                evidence
+                    .ocr_tracks
+                    .iter()
+                    .filter_map(|track| {
+                        let track_bounds = optional_bounds(track.start_seconds, track.end_seconds)?;
+                        ranges_overlap(start, end, track_bounds.0, track_bounds.1).then(|| {
+                            serde_json::json!({
+                                "id": track.id,
+                                "role": track.role,
+                                "text": track.text,
+                                "startSeconds": track.start_seconds,
+                                "endSeconds": track.end_seconds,
+                                "processor": track.provenance.processor,
+                                "processorVersion": track.provenance.processor_version,
+                                "model": track.provenance.model,
+                                "modelVersion": track.provenance.model_version,
+                            })
+                        })
+                    })
+                    .collect()
+            });
+            let sponsorblock_segments = bounds.map_or_else(Vec::new, |(start, end)| {
+                evidence
+                    .sponsorblock
+                    .as_ref()
+                    .map(|sponsorblock| {
+                        sponsorblock
+                            .segments
+                            .iter()
+                            .filter(|segment| {
+                                ranges_overlap(
+                                    start,
+                                    end,
+                                    segment.start_seconds,
+                                    segment.end_seconds,
+                                )
+                            })
+                            .map(|segment| {
+                                serde_json::json!({
+                                    "uuid": segment.uuid,
+                                    "category": segment.category,
+                                    "actionType": segment.action_type,
+                                    "startSeconds": segment.start_seconds,
+                                    "endSeconds": segment.end_seconds,
+                                })
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default()
+            });
+
+            let mut context = serde_json::json!({
+                "sourceFragmentId": span.id,
+                "videoId": video_id,
+                "mediaEvidenceRevision": evidence.revision,
+                "scenes": scenes,
+                "ocrTracks": ocr_tracks,
+                "sponsorBlockSegments": sponsorblock_segments,
+            });
+            if let Some(reference) = span.metadata.get("mediaEvidenceRef") {
+                context["sourceMediaEvidenceRef"] = reference.clone();
+            }
+            if let Some(sponsorblock) = &evidence.sponsorblock {
+                context["sponsorBlockProvenance"] = serde_json::json!({
+                    "snapshotId": sponsorblock.snapshot_id,
+                    "responseHash": sponsorblock.response_hash,
+                    "dataLicense": sponsorblock.data_license,
+                    "attribution": sponsorblock.attribution,
+                });
+            }
+            contexts.push(context);
+        }
+        if !contexts.is_empty() {
+            candidate
+                .metadata
+                .insert("mediaContext".to_string(), Value::Array(contexts));
+        }
+    }
+}
+
+fn timed_locator_bounds(locator: &SourceLocatorV1) -> Option<(f64, f64)> {
+    match locator {
+        SourceLocatorV1::Timed {
+            start_seconds,
+            end_seconds,
+            ..
+        } => optional_bounds(*start_seconds, *end_seconds),
+        SourceLocatorV1::Text { .. } => None,
+    }
+}
+
+fn optional_bounds(start: Option<f64>, end: Option<f64>) -> Option<(f64, f64)> {
+    match (start, end) {
+        (Some(start), Some(end)) => Some((start, end)),
+        (Some(start), None) => Some((start, start)),
+        (None, Some(end)) => Some((end, end)),
+        (None, None) => None,
+    }
+}
+
+fn ranges_overlap(left_start: f64, left_end: f64, right_start: f64, right_end: f64) -> bool {
+    left_start <= right_end && right_start <= left_end
 }
 
 fn should_stop(stage_through: PipelineStage, current: PipelineStage) -> bool {
@@ -1575,5 +1796,154 @@ pub(crate) fn relation_id_for(relation: &RelationCandidate) -> String {
         readable
     } else {
         format!("relation_{}", &digest_text(&readable)[..32])
+    }
+}
+
+#[cfg(test)]
+mod corpus_input_tests {
+    use super::*;
+    use crate::model::{
+        MediaBoundingBoxV1, MediaEvidenceBatchV1, MediaEvidenceProducerV1, MediaEvidenceVideoV1,
+        OcrTrackEvidenceV1, ProcessingEvidenceV1, SourceProducerV1, SourceRecordV1,
+        SourceSpanBatchV1, SourceSpanRecordV1, SponsorBlockEvidenceV1,
+        SponsorBlockSegmentEvidenceV1,
+    };
+
+    fn hash(ch: char) -> String {
+        format!("sha256:{}", ch.to_string().repeat(64))
+    }
+
+    fn processing(run_id: &str) -> ProcessingEvidenceV1 {
+        ProcessingEvidenceV1 {
+            run_id: run_id.to_string(),
+            processor: "fixture".to_string(),
+            processor_version: "1".to_string(),
+            model: "fixture-model".to_string(),
+            model_version: "1".to_string(),
+            input_hash: hash('e'),
+            config_hash: hash('f'),
+            processing_config: serde_json::json!({}),
+        }
+    }
+
+    #[test]
+    fn span_native_extraction_preserves_and_aligns_media_evidence() {
+        let mut source_metadata = BTreeMap::new();
+        source_metadata.insert("videoId".to_string(), Value::String("video-1".to_string()));
+        let sources = SourceSpanBatchV1::new(
+            SourceProducerV1 {
+                name: "youtube-corpus".to_string(),
+                revision: "git:producer".to_string(),
+            },
+            vec![SourceRecordV1 {
+                id: "stream-1".to_string(),
+                kind: "youtube_transcript".to_string(),
+                revision: hash('a'),
+                uri: Some("https://youtube.test/watch?v=fixture".to_string()),
+                title: Some("Fixture lecture".to_string()),
+                creators: vec!["Lecturer".to_string()],
+                language: Some("en".to_string()),
+                content_hash: hash('b'),
+                metadata: BTreeMap::new(),
+            }],
+            vec![SourceSpanRecordV1 {
+                id: "segment-1".to_string(),
+                source_id: "stream-1".to_string(),
+                sequence: 0,
+                text: "Every change requires an actual cause.".to_string(),
+                content_hash: hash('c'),
+                language: Some("en".to_string()),
+                locator: SourceLocatorV1::Timed {
+                    segment_index: 0,
+                    start_seconds: Some(1.0),
+                    end_seconds: Some(5.0),
+                },
+                metadata: source_metadata,
+            }],
+        );
+
+        let media = MediaEvidenceBatchV1 {
+            schema: crate::model::MEDIA_EVIDENCE_SCHEMA.to_string(),
+            schema_version: crate::model::MEDIA_EVIDENCE_VERSION_V1,
+            producer: MediaEvidenceProducerV1 {
+                name: "youtube-corpus".to_string(),
+                revision: "git:evidence".to_string(),
+            },
+            video: MediaEvidenceVideoV1 {
+                id: "video-1".to_string(),
+                youtube_id: Some("fixture".to_string()),
+                source_url: "https://youtube.test/watch?v=fixture".to_string(),
+                title: Some("Fixture lecture".to_string()),
+            },
+            revision: hash('d'),
+            scenes: vec![crate::model::SceneEvidenceV1 {
+                id: "scene-1".to_string(),
+                scene_index: 0,
+                start_frame: 0,
+                end_frame: 300,
+                start_seconds: 0.0,
+                end_seconds: 10.0,
+                metadata: serde_json::json!({}),
+                provenance: processing("scene-run"),
+            }],
+            ocr_observations: Vec::new(),
+            ocr_tracks: vec![OcrTrackEvidenceV1 {
+                id: "ocr-1".to_string(),
+                text: "Act and potency".to_string(),
+                role: "presentation_slide".to_string(),
+                language: Some("en".to_string()),
+                sample_count: 1,
+                start_frame: Some(60),
+                end_frame: Some(120),
+                start_seconds: Some(2.0),
+                end_seconds: Some(4.0),
+                region: Some(MediaBoundingBoxV1 {
+                    x: 10,
+                    y: 10,
+                    width: 100,
+                    height: 30,
+                }),
+                metadata: serde_json::json!({}),
+                observation_ids: Vec::new(),
+                scene_ids: vec!["scene-1".to_string()],
+                provenance: processing("ocr-run"),
+            }],
+            sponsorblock: Some(SponsorBlockEvidenceV1 {
+                snapshot_id: "snapshot-1".to_string(),
+                response_hash: hash('9'),
+                data_license: "CC BY-NC-SA 4.0".to_string(),
+                attribution: "SponsorBlock".to_string(),
+                categories: vec!["intro".to_string()],
+                segments: vec![SponsorBlockSegmentEvidenceV1 {
+                    uuid: "sb-1".to_string(),
+                    category: "intro".to_string(),
+                    action_type: None,
+                    start_seconds: 0.0,
+                    end_seconds: 2.0,
+                    video_duration: Some(600.0),
+                    metadata: serde_json::json!({}),
+                }],
+            }),
+        };
+
+        let extractor = PhilosophyExtractor::new(PipelineConfig {
+            persist_artifacts: false,
+            ..PipelineConfig::default()
+        });
+        let response = extractor
+            .extract_source_spans(PhilosophyCorpusInputV1::new(sources, vec![media]))
+            .unwrap();
+
+        assert_eq!(response.fragments[0].id, "segment-1");
+        assert_eq!(response.media_evidence_revisions, vec![hash('d')]);
+        let candidate = response.candidates.first().expect("candidate");
+        let contexts = candidate.metadata["mediaContext"].as_array().unwrap();
+        assert_eq!(contexts[0]["scenes"][0]["id"], "scene-1");
+        assert_eq!(contexts[0]["ocrTracks"][0]["id"], "ocr-1");
+        assert_eq!(contexts[0]["sponsorBlockSegments"][0]["category"], "intro");
+        assert_eq!(
+            contexts[0]["sponsorBlockProvenance"]["dataLicense"],
+            "CC BY-NC-SA 4.0"
+        );
     }
 }
