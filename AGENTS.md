@@ -8,6 +8,8 @@
 - Use Curry–Howard as the target intuition where the formalization fits dependent type theory, but do not treat failure to discover a proof as evidence of negation.
 
 
+## Engineering and dependency rules
+
 - Use `bun` for frontend package management, scripts, and dependency execution.
 - Format frontend code with `oxfmt`.
 - Write frontend code in TypeScript, not JavaScript.
