@@ -29,10 +29,12 @@ def main() -> int:
     errors: list[str] = []
     manifest = tomllib.loads((ROOT / "Cargo.toml").read_text())
     dependencies = manifest.get("workspace", {}).get("dependencies", {})
+    # The effective package is `package` when present, otherwise the key itself (Cargo's
+    # unaliased form, which may also be a plain version string).
     nlp_keys = {
         key
         for key, spec in dependencies.items()
-        if isinstance(spec, dict) and str(spec.get("package", "")).startswith("moenarch-text-")
+        if str(spec.get("package", key) if isinstance(spec, dict) else key).startswith("moenarch-text-")
     }
     if nlp_keys != set(EXPECTED):
         errors.append(f"expected nlp-stack dependencies {sorted(EXPECTED)}, found {sorted(nlp_keys)}")
