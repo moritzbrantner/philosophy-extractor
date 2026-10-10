@@ -17,13 +17,16 @@ owns = [
   "philosophy-extractor/philosophical-assessment",
   "philosophy-extractor/formalization-candidates",
   "philosophy-extractor/worldview-compatibility",
+  # Interim: packages/schema still defines the generic source-span contracts (SourceSpanBatchV1 …)
+  # that packages/source-ingestion validates. Moving them to moenarch-foundation corpus-core is open
+  # work in #8; until then this repository honestly owns that intake contract.
+  "philosophy-extractor/source-span-intake",
 ]
 consumes = [
   "nlp-stack/text-core",
   "nlp-stack/text-embeddings",
   "nlp-stack/text-linguistics",
   "nlp-stack/retrieval-semantics",
-  "moenarch-foundation/corpus-core",
   "document-search/source-span-export",
 ]
 must_not_own = [
@@ -31,7 +34,6 @@ must_not_own = [
   "nlp-stack/text-embeddings",
   "nlp-stack/text-linguistics",
   "nlp-stack/retrieval-semantics",
-  "moenarch-foundation/corpus-core",
   "document-search/corpus-ingestion",
   "youtube-corpus/corpus-persistence",
   "media/asr",

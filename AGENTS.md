@@ -12,9 +12,10 @@
 
 Machine-readable in `.repository.toml` (`[architecture]`); keep both lists identical. Check with `coding-tooling repository contract --root . --json`.
 
-- Owns: `philosophy-extractor/claim-candidates`, `philosophy-extractor/argument-reconstruction`, `philosophy-extractor/philosophical-assessment`, `philosophy-extractor/formalization-candidates`, `philosophy-extractor/worldview-compatibility`
-- Adapts: `nlp-stack/text-core`, `nlp-stack/text-embeddings`, `nlp-stack/text-linguistics`, `nlp-stack/retrieval-semantics`, `moenarch-foundation/corpus-core`, `document-search/source-span-export`
-- Non-authoritative: `nlp-stack/text-core`, `nlp-stack/text-embeddings`, `nlp-stack/text-linguistics`, `nlp-stack/retrieval-semantics`, `moenarch-foundation/corpus-core`, `document-search/corpus-ingestion`, `youtube-corpus/corpus-persistence`, `media/asr`, `media/ocr`, `media/scene-detection`
+- Owns: `philosophy-extractor/claim-candidates`, `philosophy-extractor/argument-reconstruction`, `philosophy-extractor/philosophical-assessment`, `philosophy-extractor/formalization-candidates`, `philosophy-extractor/worldview-compatibility`, `philosophy-extractor/source-span-intake`
+- Interim: `source-span-intake` (the generic source-span contracts in `packages/schema`) stays owned here until it moves to Foundation corpus-core (#8).
+- Adapts: `nlp-stack/text-core`, `nlp-stack/text-embeddings`, `nlp-stack/text-linguistics`, `nlp-stack/retrieval-semantics`, `document-search/source-span-export`
+- Non-authoritative: `nlp-stack/text-core`, `nlp-stack/text-embeddings`, `nlp-stack/text-linguistics`, `nlp-stack/retrieval-semantics`, `document-search/corpus-ingestion`, `youtube-corpus/corpus-persistence`, `media/asr`, `media/ocr`, `media/scene-detection`
 
 ## Engineering and dependency rules
 
