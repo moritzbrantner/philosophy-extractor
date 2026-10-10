@@ -1,24 +1,14 @@
 # Local NLP stack development
 
-The committed workspace keeps exact crates.io requirements for its four NLP dependencies, but ordinary feature work does not require publishing an intermediate `nlp-stack` release.
+The workspace consumes `nlp-stack` through exact-revision git dependencies on the public repository (owner decision in #8). All four `moenarch-text-*` entries in the root `Cargo.toml` share one full commit `rev`, currently `057689ca1df031d677f4afd9d65eed181c6fca06`. A fresh clone therefore builds and tests with plain Cargo (`cargo test --locked --workspace`), without a sibling checkout, credentials or source mode.
 
-The committed `.coding-tooling.source-deps.json` pins all four packages to one exact `nlp-stack` revision. Run:
+To consume newer NLP behavior:
 
-```sh
-bash scripts/source-deps activate
-bash scripts/source-deps status
-```
+1. Land and push the change in `nlp-stack`.
+2. Update the shared `rev` of all four entries to that commit.
+3. Run `cargo update -p moenarch-text-core -p moenarch-text-embeddings -p moenarch-text-linguistics -p moenarch-text-retrieval` (or plain `cargo metadata`) and commit the resulting `Cargo.lock` with the manifest change.
+4. Run `cargo test --locked --workspace`.
 
-`coding-tooling` generates the ignored `.cargo/config.toml`. When a sibling `../nlp-stack` checkout exists, activation verifies that its Git `HEAD` exactly matches the declared revision before using its crate paths. Otherwise the exact Git revision is used when the private repository is accessible.
+Testing against an *unpushed* sibling `../nlp-stack` change is not supported yet: `coding-tooling source-deps` only generates `[patch.crates-io]`, which does not apply to git dependencies (moritzbrantner/coding-tooling#313). `.coding-tooling.source-deps.json` therefore declares no patches. Do not hand-write `[patch]` sections or commit sibling paths.
 
-All four source crates must continue to declare versions compatible with the committed `=0.1.1` requirements. A mismatch fails Cargo resolution; do not loosen the consumer requirements merely to make source mode work. Update all four declaration entries to the same reviewed revision whenever the validated NLP head changes.
-
-Run normal Cargo checks while source mode is active. The resolved packages should have local or exact Git source provenance rather than crates.io provenance. Treat unused-patch warnings or revision mismatches as failed setup.
-
-Before registry-only verification, deactivate the managed override:
-
-```sh
-bash scripts/source-deps deactivate
-```
-
-Do not commit the generated Cargo configuration, sibling paths, moving Git dependencies, or lockfile changes caused only by switching modes. Version bumps, crates.io publication, and registry-only cutover belong to a dedicated release task after the source graph has been proven.
+Publishing crates and switching back to registry requirements is a later release task.

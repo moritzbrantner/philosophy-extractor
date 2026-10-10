@@ -17,6 +17,5 @@
 - Use Tailwind CSS for frontend styling.
 - Use React Query for frontend server state and data fetching.
 
-- Use managed exact-revision source mode for unreleased `nlp-stack` work; do not create ad hoc Cargo patch files or publish crates merely to unblock development.
-- Keep committed package manifests registry-based. The generated `.cargo/config.toml` is local-only and must remain ignored.
-- Deactivate source mode before registry-only release verification.
+- Consume `nlp-stack` through committed exact-revision git dependencies on the public repository (owner decision, #8): all `moenarch-text-*` workspace dependencies share one full `rev`. Update that `rev` only to a pushed, reviewed nlp-stack commit, and regenerate `Cargo.lock` in the same change. Do not publish crates merely to unblock development; releases come later.
+- No standing source patches: `.coding-tooling.source-deps.json` declares none until coding-tooling can patch git dependencies (moritzbrantner/coding-tooling#313). Do not hand-write `[patch]` sections.

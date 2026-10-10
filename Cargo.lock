@@ -1006,14 +1006,14 @@ dependencies = [
 [[package]]
 name = "moenarch-text-core"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71c5789282ef323dd8905e54abe6b7ebacdb9b49362f9b38284f5eb14b1c27a4"
+source = "git+https://github.com/moritzbrantner/nlp-stack?rev=057689ca1df031d677f4afd9d65eed181c6fca06#057689ca1df031d677f4afd9d65eed181c6fca06"
 dependencies = [
  "moenarch-jobs-core",
  "moenarch-media-core",
  "moenarch-runtime-core",
  "serde",
  "serde_json",
+ "unicode-casefold",
  "unicode-normalization",
  "unicode-segmentation",
 ]
@@ -1021,8 +1021,7 @@ dependencies = [
 [[package]]
 name = "moenarch-text-embeddings"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77aaa1c92a75a646092794e5888078ac3fa51bd5f0ebcf9980ec4227c5e85f36"
+source = "git+https://github.com/moritzbrantner/nlp-stack?rev=057689ca1df031d677f4afd9d65eed181c6fca06#057689ca1df031d677f4afd9d65eed181c6fca06"
 dependencies = [
  "moenarch-math-sparse-data",
  "moenarch-runtime-core",
@@ -1039,8 +1038,7 @@ dependencies = [
 [[package]]
 name = "moenarch-text-index"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50b75554994390b6aa1f17a11c44640ca8c62af84c5f9907d10c85b4ef473ef3"
+source = "git+https://github.com/moritzbrantner/nlp-stack?rev=057689ca1df031d677f4afd9d65eed181c6fca06#057689ca1df031d677f4afd9d65eed181c6fca06"
 dependencies = [
  "moenarch-runtime-core",
  "moenarch-text-core",
@@ -1055,8 +1053,7 @@ dependencies = [
 [[package]]
 name = "moenarch-text-lexical"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94fbe3d3fc6c8638420031bf6e8a0579e41436a55d4b07860c237f064420c18a"
+source = "git+https://github.com/moritzbrantner/nlp-stack?rev=057689ca1df031d677f4afd9d65eed181c6fca06#057689ca1df031d677f4afd9d65eed181c6fca06"
 dependencies = [
  "moenarch-math-sparse-data",
  "moenarch-runtime-core",
@@ -1068,8 +1065,7 @@ dependencies = [
 [[package]]
 name = "moenarch-text-linguistics"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1eb87aa86fd767f9c8cd5f867be9eaaeec5e2b463b9d7380a7db09965fce93d5"
+source = "git+https://github.com/moritzbrantner/nlp-stack?rev=057689ca1df031d677f4afd9d65eed181c6fca06#057689ca1df031d677f4afd9d65eed181c6fca06"
 dependencies = [
  "candle-core",
  "candle-nn",
@@ -1086,8 +1082,7 @@ dependencies = [
 [[package]]
 name = "moenarch-text-model-runtime"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "775331a30c53b67e5499c254dc04553b7ced0bee41ef0afe3eb25338a1e50d51"
+source = "git+https://github.com/moritzbrantner/nlp-stack?rev=057689ca1df031d677f4afd9d65eed181c6fca06#057689ca1df031d677f4afd9d65eed181c6fca06"
 dependencies = [
  "candle-core",
  "candle-nn",
@@ -1103,8 +1098,7 @@ dependencies = [
 [[package]]
 name = "moenarch-text-retrieval"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db3a988d41b34e15b59adb22853407066f4aa502fe62570f46c067b8f265c575"
+source = "git+https://github.com/moritzbrantner/nlp-stack?rev=057689ca1df031d677f4afd9d65eed181c6fca06#057689ca1df031d677f4afd9d65eed181c6fca06"
 dependencies = [
  "moenarch-runtime-core",
  "moenarch-text-core",
@@ -1831,6 +1825,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40ce102ab67701b8526c123c1bab5cbe42d7040ccfd0f64af1a385808d2f43de"
 
 [[package]]
+name = "unicode-casefold"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b7f66b1c8f8caa2ab31dc6d3f35386f16efdab89668f93411e565ac368908e8f"
+
+[[package]]
 name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2106,3 +2106,19 @@ name = "zmij"
 version = "1.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
+
+[[patch.unused]]
+name = "moenarch-text-core"
+version = "0.1.1"
+
+[[patch.unused]]
+name = "moenarch-text-embeddings"
+version = "0.1.1"
+
+[[patch.unused]]
+name = "moenarch-text-linguistics"
+version = "0.1.1"
+
+[[patch.unused]]
+name = "moenarch-text-retrieval"
+version = "0.1.1"
