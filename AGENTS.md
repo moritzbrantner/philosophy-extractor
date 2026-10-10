@@ -8,6 +8,14 @@
 - Use Curry–Howard as the target intuition where the formalization fits dependent type theory, but do not treat failure to discover a proof as evidence of negation.
 
 
+## Authority boundaries
+
+Machine-readable in `.repository.toml` (`[architecture]`); keep both lists identical. Check with `coding-tooling repository contract --root . --json`.
+
+- Owns: `philosophy-extractor/claim-candidates`, `philosophy-extractor/argument-reconstruction`, `philosophy-extractor/philosophical-assessment`, `philosophy-extractor/formalization-candidates`, `philosophy-extractor/worldview-compatibility`
+- Adapts: `nlp-stack/text-core`, `nlp-stack/text-embeddings`, `nlp-stack/text-linguistics`, `nlp-stack/retrieval-semantics`, `moenarch-foundation/corpus-core`, `document-search/source-span-export`
+- Non-authoritative: `nlp-stack/text-core`, `nlp-stack/text-embeddings`, `nlp-stack/text-linguistics`, `nlp-stack/retrieval-semantics`, `moenarch-foundation/corpus-core`, `document-search/corpus-ingestion`, `youtube-corpus/corpus-persistence`, `media/asr`, `media/ocr`, `media/scene-detection`
+
 ## Engineering and dependency rules
 
 - Use `bun` for frontend package management, scripts, and dependency execution.
