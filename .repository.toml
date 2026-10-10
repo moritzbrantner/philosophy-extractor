@@ -1,0 +1,51 @@
+schema_version = 1
+id = "moritzbrantner/philosophy-extractor"
+kind = "app"
+status = "active"
+summary = "Philosophical interpretation: source-grounded statement and claim candidates, argument reconstruction, philosophical assessments, formalization candidates and downstream worldview compatibility over NLP capabilities consumed from nlp-stack."
+depends_on = ["moritzbrantner/nlp-stack"]
+consumed_by = []
+supersedes = []
+replaced_by = []
+
+# Interpretation lives here. Corpus ingest/search, generic source identity/provenance, ASR/OCR/scene
+# algorithms and generic NLP are owned elsewhere and must not grow here (issue #8).
+[architecture]
+owns = [
+  "philosophy-extractor/claim-candidates",
+  "philosophy-extractor/argument-reconstruction",
+  "philosophy-extractor/philosophical-assessment",
+  "philosophy-extractor/formalization-candidates",
+  "philosophy-extractor/worldview-compatibility",
+  # Interim: packages/schema still defines the generic source-span contracts (SourceSpanBatchV1 …)
+  # that packages/source-ingestion validates. Moving them to moenarch-foundation corpus-core is open
+  # work in #8; until then this repository honestly owns that intake contract.
+  "philosophy-extractor/source-span-intake",
+]
+consumes = [
+  "nlp-stack/text-core",
+  "nlp-stack/text-embeddings",
+  "nlp-stack/text-linguistics",
+  "nlp-stack/retrieval-semantics",
+  "document-search/source-span-export",
+]
+must_not_own = [
+  "nlp-stack/text-core",
+  "nlp-stack/text-embeddings",
+  "nlp-stack/text-linguistics",
+  "nlp-stack/retrieval-semantics",
+  "document-search/corpus-ingestion",
+  "youtube-corpus/corpus-persistence",
+  "media/asr",
+  "media/ocr",
+  "media/scene-detection",
+]
+
+[bootstrap]
+command = ["cargo", "build", "--locked", "--workspace"]
+check = ["cargo", "test", "--locked", "--workspace"]
+timeout_seconds = 1800
+
+[pages]
+status = "not-applicable"
+reason = "No reviewed demo or review surface is published yet; apps/review-ui is a local review tool. Introduce Pages deliberately with its own acceptance."
