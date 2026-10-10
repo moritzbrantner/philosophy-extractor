@@ -1255,6 +1255,7 @@ dependencies = [
  "philosophy-extractor-artifact-store",
  "philosophy-extractor-model-providers",
  "philosophy-extractor-schema",
+ "philosophy-extractor-source-ingestion",
  "serde",
  "serde_json",
  "sha2",
