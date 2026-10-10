@@ -63,13 +63,7 @@ The MVP is offline-capable. Provider boundaries are in place for OpenAI Response
 
 ## Usage
 
-The current development head consumes an `nlp-stack` API that is intentionally ahead of the registry release. Activate the committed exact sibling source graph before running Cargo commands:
-
-```bash
-bash scripts/source-deps activate
-```
-
-Then run the worker normally:
+The workspace depends on `nlp-stack` through exact-revision git dependencies on the public repository, so a fresh clone builds with plain Cargo; no sibling checkout or source mode is needed. Run the worker:
 
 ```bash
 cargo run -p philosophy-extractor-worker -- path/to/text.txt --title "Nicomachean Ethics" --author Aristotle --pretty
@@ -125,15 +119,11 @@ printf 'Knowledge concerns truth. Justice should harmonize the soul.' \
 
 ## NLP source development
 
-Normal feature work uses the exact `nlp-stack` revision recorded in `.coding-tooling.source-deps.json` without waiting for a crates.io release. `bash scripts/source-deps activate` requires the pinned sibling checkout and fails if it is missing or at the wrong revision; it never falls back to authenticated Git. Use `bash scripts/source-deps deactivate` before an explicit registry-only release check.
-
-See [docs/nlp-stack-local-development.md](docs/nlp-stack-local-development.md).
+The four `moenarch-text-*` dependencies in the root `Cargo.toml` point at one exact `nlp-stack` commit. To consume newer NLP behavior, push and review it in `nlp-stack`, then update the shared `rev` and `Cargo.lock` here. See [docs/nlp-stack-local-development.md](docs/nlp-stack-local-development.md).
 
 ## Docker
 
-The existing Docker and Compose builds are registry/distribution paths. While development intentionally consumes an unpublished `nlp-stack` source API, those images are expected to remain behind the source workspace until an explicit release cutover publishes the compatible registry contract; ordinary feature work must not publish packages merely to make Docker consume the candidate.
-
-Once the registry contract has caught up, build the API image with:
+Docker builds fetch the pinned public `nlp-stack` revision like any other Cargo git dependency. Build the API image with:
 
 ```bash
 docker build -t philosophy-extractor .
@@ -178,7 +168,7 @@ curl -X POST http://localhost:8080/extract \
   }'
 ```
 
-The existing Compose setup can also run the API after the registry contract has caught up:
+The existing Compose setup can also run the API:
 
 ```bash
 docker compose up --build api
