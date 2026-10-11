@@ -7,6 +7,12 @@ use philosophy_extractor_schema::{
 use std::collections::HashSet;
 use std::fmt;
 
+mod corpus_core_intake;
+
+pub use corpus_core_intake::{
+    CORPUS_CORE_BATCH_SCHEMA, CORPUS_CORE_BATCH_VERSION_V1, source_spans_from_corpus_core_jsonl,
+};
+
 pub fn plain_text_document(text: impl Into<String>) -> ExtractionDocument {
     ExtractionDocument {
         id: None,

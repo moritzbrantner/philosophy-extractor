@@ -912,6 +912,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
+name = "moenarch-corpus-core"
+version = "0.1.0"
+source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9#b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9"
+dependencies = [
+ "serde",
+ "sha2",
+]
+
+[[package]]
 name = "moenarch-jobs-core"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1312,8 +1321,11 @@ dependencies = [
 name = "philosophy-extractor-source-ingestion"
 version = "0.1.0"
 dependencies = [
+ "moenarch-corpus-core",
  "philosophy-extractor-schema",
+ "serde",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]

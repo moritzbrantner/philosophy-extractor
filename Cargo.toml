@@ -18,6 +18,7 @@ edition = "2024"
 
 [workspace.dependencies]
 clap = { version = "4.6.1", features = ["derive"] }
+corpus-core = { package = "moenarch-corpus-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9" }
 philosophy-extractor = { path = "packages/pipeline" }
 philosophy-extractor-schema = { path = "packages/schema" }
 serde = { version = "1.0.228", features = ["derive"] }
