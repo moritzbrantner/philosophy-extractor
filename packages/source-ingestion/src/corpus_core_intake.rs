@@ -232,6 +232,13 @@ impl<'a> CorpusIndex<'a> {
                         .and_then(|content| content.hash.as_ref())
                     {
                         revalidate_hash(hash, &owner)?;
+                        // The content reference must describe the same payload as the record.
+                        if hash != &representation.content_hash {
+                            return Err(error(format!(
+                                "{owner} content hash {} conflicts with its content reference hash {hash}",
+                                representation.content_hash
+                            )));
+                        }
                     }
                     if let Some(hash) = &representation.provenance.parameters_hash {
                         revalidate_hash(hash, &owner)?;
