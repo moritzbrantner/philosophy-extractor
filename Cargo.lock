@@ -1313,6 +1313,7 @@ name = "philosophy-extractor-source-ingestion"
 version = "0.1.0"
 dependencies = [
  "philosophy-extractor-schema",
+ "serde_json",
 ]
 
 [[package]]

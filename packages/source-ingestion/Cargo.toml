@@ -5,3 +5,6 @@ edition.workspace = true
 
 [dependencies]
 philosophy-extractor-schema.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
