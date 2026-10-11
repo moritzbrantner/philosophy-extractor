@@ -8,8 +8,9 @@ consumed_by = []
 supersedes = []
 replaced_by = []
 
-# Interpretation lives here. Corpus ingest/search, generic source identity/provenance, ASR/OCR/scene
-# algorithms and generic NLP are owned elsewhere and must not grow here (issue #8).
+# Interpretation lives here. Corpus ingest/search, generic source identity/provenance (Foundation
+# corpus-core), ASR/OCR/scene algorithms and generic NLP are owned elsewhere and must not grow here
+# (issue #8).
 [architecture]
 owns = [
   "philosophy-extractor/claim-candidates",
@@ -17,9 +18,11 @@ owns = [
   "philosophy-extractor/philosophical-assessment",
   "philosophy-extractor/formalization-candidates",
   "philosophy-extractor/worldview-compatibility",
-  # Interim: packages/schema still defines the generic source-span contracts (SourceSpanBatchV1 …)
-  # that packages/source-ingestion validates. Moving them to moenarch-foundation corpus-core is open
-  # work in #8; until then this repository honestly owns that intake contract.
+  # Interim: packages/schema still defines the source-span interpretation input contracts
+  # (SourceSpanBatchV1 …) that packages/source-ingestion validates. Generic corpus identity now comes
+  # from moenarch-foundation corpus-core (corpus-core batches are deserialized into its types and only
+  # mapped here); moving the remaining source-span contract to corpus-core is open work in #8, so
+  # until then this repository honestly owns that intake contract.
   "philosophy-extractor/source-span-intake",
 ]
 consumes = [
