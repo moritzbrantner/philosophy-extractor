@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   repository-contract:
-    name: Repository contract
+    name: merge-ready
     runs-on: ubuntu-latest
 
     steps:
