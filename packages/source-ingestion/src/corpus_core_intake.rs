@@ -457,6 +457,22 @@ impl<'a> CorpusIndex<'a> {
                 );
             }
 
+            if let Some(hash) = &representation.provenance.parameters_hash {
+                metadata.insert(
+                    "extractionConfigHash".to_string(),
+                    Value::String(hash.to_string()),
+                );
+            }
+
+            metadata.insert(
+                "corpusCoreRepresentationRevision".to_string(),
+                Value::String(record_revision(representation)?),
+            );
+            metadata.insert(
+                "extractionProducerInputs".to_string(),
+                serde_json::to_value(&representation.provenance.inputs)
+                    .map_err(|cause| error(cause.to_string()))?,
+            );
             sources.push(SourceRecordV1 {
                 id: asset.id.to_string(),
                 kind: asset_kind(&asset.kind),
@@ -496,6 +512,13 @@ impl<'a> CorpusIndex<'a> {
 
         Ok(SourceSpanBatchV1::new(producer, sources, spans))
     }
+}
+
+fn record_revision(record: &impl serde::Serialize) -> Result<String, SourceSpanValidationError> {
+    // Hash the actual corpus-core record, never a local mirror or a release label.
+    let value = serde_json::to_value(record).map_err(|cause| error(cause.to_string()))?;
+    let bytes = serde_json::to_vec(&value).map_err(|cause| error(cause.to_string()))?;
+    Ok(format!("sha256:{}", ContentHash::from_bytes(&bytes)))
 }
 
 fn asset_kind(kind: &corpus_core::AssetKind) -> String {
@@ -549,6 +572,32 @@ fn map_segment(
         .unwrap_or_default();
 
     let mut metadata = Metadata::new();
+    metadata.insert(
+        "corpusCoreSegmentRevision".to_string(),
+        Value::String(record_revision(segment)?),
+    );
+    if let Some(provenance) = &segment.provenance {
+        metadata.insert(
+            "spanProducer".to_string(),
+            Value::String(provenance.producer.clone()),
+        );
+        if let Some(revision) = &provenance.producer_version {
+            metadata.insert(
+                "spanProducerVersion".to_string(),
+                Value::String(revision.clone()),
+            );
+        }
+        if let Some(hash) = &provenance.parameters_hash {
+            metadata.insert(
+                "spanConfigHash".to_string(),
+                Value::String(hash.to_string()),
+            );
+        }
+        metadata.insert(
+            "spanProducerInputs".to_string(),
+            serde_json::to_value(&provenance.inputs).map_err(|cause| error(cause.to_string()))?,
+        );
+    }
     metadata.insert("characterStart".to_string(), Value::from(range.start));
     metadata.insert("characterEnd".to_string(), Value::from(range.end));
     if let Some(page_index) = segment.locator.page_index {

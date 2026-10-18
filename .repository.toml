@@ -4,7 +4,7 @@ kind = "app"
 status = "active"
 summary = "Philosophical interpretation: source-grounded statement and claim candidates, argument reconstruction, philosophical assessments, formalization candidates and downstream worldview compatibility over NLP capabilities consumed from nlp-stack."
 depends_on = ["moritzbrantner/nlp-stack"]
-consumed_by = []
+consumed_by = ["moritzbrantner/belief-lab"]
 supersedes = []
 replaced_by = []
 
