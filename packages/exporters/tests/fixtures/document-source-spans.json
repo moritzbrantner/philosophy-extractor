@@ -1,0 +1,282 @@
+{
+  "schema": "source_span_interchange",
+  "schemaVersion": 1,
+  "producer": {
+    "name": "document-search",
+    "revision": "git:28463de"
+  },
+  "sources": [
+    {
+      "id": "asset:1130de43d60efbf8f61bfdc49b19451ed761d244ddf6dfaa9bd8761e349f15b5",
+      "kind": "text",
+      "revision": "sha256:afabd667c85fe7db1549e7fa80096a9ae29d7a5e93a861ae88c232c896211e70",
+      "uri": "ethics.txt",
+      "title": "ethics",
+      "contentHash": "sha256:afabd667c85fe7db1549e7fa80096a9ae29d7a5e93a861ae88c232c896211e70",
+      "metadata": {
+        "assetContentHash": "sha256:22f928dddaa82c885d0ea6d1c1e052373edfffd9071261ee442f6d44dbcade23",
+        "corpusCoreRepresentationId": "representation:e6229248f7e571fdf582803a9102b1fe906f720fa56eeece2a674898731ae74d",
+        "corpusCoreRepresentationRevision": "sha256:e77e24eb13850cc1cb40d6b689d3a93d57517bc30758e39b29640f6a416a67b1",
+        "corpusCoreSourceId": "source:747a508aa301ae998bdf40d634807a143bb47353c1fcd3121f38bf5e52be48af",
+        "extractionProducer": "document-search/html-extraction",
+        "extractionProducerInputs": [
+          {
+            "id": "asset:1130de43d60efbf8f61bfdc49b19451ed761d244ddf6dfaa9bd8761e349f15b5",
+            "record_type": "asset"
+          }
+        ],
+        "extractionProducerVersion": "git:28463de"
+      }
+    },
+    {
+      "id": "asset:1dd96d5d7f36b7910a8d5167f08b5c48934a33ce9bcfff08fbcc8ea1c53e4c02",
+      "kind": "text",
+      "revision": "sha256:4f174ba3b3a7a55505b30ea55a430b248eb646c5f518cdb31f01c58520f3c91d",
+      "uri": "meditation.md",
+      "title": "meditation",
+      "contentHash": "sha256:4f174ba3b3a7a55505b30ea55a430b248eb646c5f518cdb31f01c58520f3c91d",
+      "metadata": {
+        "assetContentHash": "sha256:1a15e389cec0391d26530fa4a1d5a9590bb59fb24b02448f8eef7d9181dd661a",
+        "corpusCoreRepresentationId": "representation:bfe5e6e54224057810c157a67ada0669611b84447bef05cff521dfa808b931c0",
+        "corpusCoreRepresentationRevision": "sha256:da736ad7a544965ca1006f024b5031615cec28b08b01ff28e6c9d90b12ae2568",
+        "corpusCoreSourceId": "source:1741566f80a0c2716c38f4a70df51387e8d5521fef2248a3b01fa50a179e713d",
+        "extractionProducer": "document-search/html-extraction",
+        "extractionProducerInputs": [
+          {
+            "id": "asset:1dd96d5d7f36b7910a8d5167f08b5c48934a33ce9bcfff08fbcc8ea1c53e4c02",
+            "record_type": "asset"
+          }
+        ],
+        "extractionProducerVersion": "git:28463de"
+      }
+    },
+    {
+      "id": "asset:834dbe5f424c10c50b519c241bff22d763920ddcca50580a866d31b593c36003",
+      "kind": "web_page",
+      "revision": "sha256:058c130dd87eae7a58f49aba4c539c8278f3b837b1177efce4315bbbbf617a64",
+      "uri": "https://example.test/essay",
+      "title": "Remote Essay",
+      "contentHash": "sha256:058c130dd87eae7a58f49aba4c539c8278f3b837b1177efce4315bbbbf617a64",
+      "metadata": {
+        "assetContentHash": "sha256:1b6a90a365cb90ec462500111ce4480c4da8e48194eb440f815b77bdb55df779",
+        "corpusCoreRepresentationId": "representation:dc1992e89cb326eff9a755237d145f0afdf2afa06d539da13362a814da6f449d",
+        "corpusCoreRepresentationRevision": "sha256:9aa3639b613bb704774c8c9f44ff7a5e9885b3d1c841724754e89c4a92c3f321",
+        "corpusCoreSourceId": "source:474bf16046a6c338affc60eac0d392c4cb4320d606fee7caab448b4a79b18c50",
+        "extractionProducer": "document-search/html-extraction",
+        "extractionProducerInputs": [
+          {
+            "id": "asset:834dbe5f424c10c50b519c241bff22d763920ddcca50580a866d31b593c36003",
+            "record_type": "asset"
+          }
+        ],
+        "extractionProducerVersion": "git:28463de"
+      }
+    }
+  ],
+  "spans": [
+    {
+      "id": "segment:3bb622591f64567489aeb0af42f40d88b75b0f86876f471456fc458a4b893454",
+      "sourceId": "asset:1130de43d60efbf8f61bfdc49b19451ed761d244ddf6dfaa9bd8761e349f15b5",
+      "sequence": 0,
+      "text": "Virtue is a mean between two vices.",
+      "contentHash": "sha256:20c4991d89e91befc7c7d295a72d8f00c0ecf38eddc2095896909526ea867c7e",
+      "locator": {
+        "kind": "text",
+        "byteStart": 0,
+        "byteEnd": 35,
+        "paragraphOrdinal": 0,
+        "sourceSelector": "p"
+      },
+      "metadata": {
+        "characterEnd": 35,
+        "characterStart": 0,
+        "corpusCoreSegmentRevision": "sha256:ad523acac6956c0aec84542706e166b5a413c4a1bf10a86ff4c4dd21b5a75966",
+        "spanProducer": "document-search/html-extraction",
+        "spanProducerInputs": [
+          {
+            "id": "representation:e6229248f7e571fdf582803a9102b1fe906f720fa56eeece2a674898731ae74d",
+            "record_type": "representation"
+          }
+        ],
+        "spanProducerVersion": "git:28463de"
+      }
+    },
+    {
+      "id": "segment:5481becbfff056c552f0ace8842f2c9aea1f081b1e07214dfafd62ce31418c97",
+      "sourceId": "asset:1130de43d60efbf8f61bfdc49b19451ed761d244ddf6dfaa9bd8761e349f15b5",
+      "sequence": 1,
+      "text": "Happiness is activity in accordance with virtue.",
+      "contentHash": "sha256:98e09f904134415a603658463bc634e9c5ceb00d0e344a7e751eed710f200328",
+      "locator": {
+        "kind": "text",
+        "byteStart": 37,
+        "byteEnd": 85,
+        "paragraphOrdinal": 1,
+        "sourceSelector": "p"
+      },
+      "metadata": {
+        "characterEnd": 85,
+        "characterStart": 37,
+        "corpusCoreSegmentRevision": "sha256:faec79a54ef325f130c9bd8a2a30ec165fdcca62e58b160f7104c0dc70c20e31",
+        "spanProducer": "document-search/html-extraction",
+        "spanProducerInputs": [
+          {
+            "id": "representation:e6229248f7e571fdf582803a9102b1fe906f720fa56eeece2a674898731ae74d",
+            "record_type": "representation"
+          }
+        ],
+        "spanProducerVersion": "git:28463de"
+      }
+    },
+    {
+      "id": "segment:832a68cdc002fc69c60c00910fdd50d6c0a2bcf15631a11b3b726ab38e2d1551",
+      "sourceId": "asset:1dd96d5d7f36b7910a8d5167f08b5c48934a33ce9bcfff08fbcc8ea1c53e4c02",
+      "sequence": 0,
+      "text": "Méditation 𝄞",
+      "contentHash": "sha256:d2a481f91c9234ec700745b9c629828468210e74b4d06171ab77d0a4f8612135",
+      "locator": {
+        "kind": "text",
+        "byteStart": 0,
+        "byteEnd": 16,
+        "paragraphOrdinal": 0,
+        "sourceSelector": "h1",
+        "headingPath": [
+          "Méditation 𝄞"
+        ]
+      },
+      "metadata": {
+        "characterEnd": 12,
+        "characterStart": 0,
+        "corpusCoreSegmentRevision": "sha256:6c1748bc3743dabad428212ab32c7c5b6fca0cb9548973cd926c23aab6d9f077",
+        "spanProducer": "document-search/html-extraction",
+        "spanProducerInputs": [
+          {
+            "id": "representation:bfe5e6e54224057810c157a67ada0669611b84447bef05cff521dfa808b931c0",
+            "record_type": "representation"
+          }
+        ],
+        "spanProducerVersion": "git:28463de"
+      }
+    },
+    {
+      "id": "segment:19218c8c57af1fd044c77a3ff21b8c7249f02eeb90353bb9e7198353315ec134",
+      "sourceId": "asset:1dd96d5d7f36b7910a8d5167f08b5c48934a33ce9bcfff08fbcc8ea1c53e4c02",
+      "sequence": 1,
+      "text": "I think, therefore I am — cogito 😀 ergo sum.",
+      "contentHash": "sha256:32d2a09017ffa8eed88d9bfd946c90a5a3659afe50e27b9a78d96c6382979b91",
+      "locator": {
+        "kind": "text",
+        "byteStart": 18,
+        "byteEnd": 67,
+        "paragraphOrdinal": 1,
+        "sourceSelector": "p",
+        "headingPath": [
+          "Méditation 𝄞"
+        ]
+      },
+      "metadata": {
+        "characterEnd": 58,
+        "characterStart": 14,
+        "corpusCoreSegmentRevision": "sha256:34d05f779eb313595895bdf99641066c8f858afce65fa237beb3a84eb02fc897",
+        "spanProducer": "document-search/html-extraction",
+        "spanProducerInputs": [
+          {
+            "id": "representation:bfe5e6e54224057810c157a67ada0669611b84447bef05cff521dfa808b931c0",
+            "record_type": "representation"
+          }
+        ],
+        "spanProducerVersion": "git:28463de"
+      }
+    },
+    {
+      "id": "segment:aaf3e88a754831eb342e4b52f239561bff9eeb8eda70c6b7863159ef8b0f2cf6",
+      "sourceId": "asset:1dd96d5d7f36b7910a8d5167f08b5c48934a33ce9bcfff08fbcc8ea1c53e4c02",
+      "sequence": 2,
+      "text": "Doubt is the beginning of wisdom.",
+      "contentHash": "sha256:6a90c6df3eb32162091afb0c0e0ea5670d4fa0e59ae233140dd83698231a1cbe",
+      "locator": {
+        "kind": "text",
+        "byteStart": 69,
+        "byteEnd": 102,
+        "paragraphOrdinal": 2,
+        "sourceSelector": "p",
+        "headingPath": [
+          "Méditation 𝄞"
+        ]
+      },
+      "metadata": {
+        "characterEnd": 93,
+        "characterStart": 60,
+        "corpusCoreSegmentRevision": "sha256:fd89dc64a426ba038c1eb37f3d607c4657269675f196c431a2abaa8d6f1c89c9",
+        "spanProducer": "document-search/html-extraction",
+        "spanProducerInputs": [
+          {
+            "id": "representation:bfe5e6e54224057810c157a67ada0669611b84447bef05cff521dfa808b931c0",
+            "record_type": "representation"
+          }
+        ],
+        "spanProducerVersion": "git:28463de"
+      }
+    },
+    {
+      "id": "segment:14226abbf8eb1fdccd7ea5b00268bd17ef87fb8ff861cddb188dbc4e013ff041",
+      "sourceId": "asset:834dbe5f424c10c50b519c241bff22d763920ddcca50580a866d31b593c36003",
+      "sequence": 0,
+      "text": "On Truth",
+      "contentHash": "sha256:f32c24dc6f91fb30440653a3ddc721ddb2857abd87c9b08586c983ceb64e4cdd",
+      "locator": {
+        "kind": "text",
+        "byteStart": 0,
+        "byteEnd": 8,
+        "paragraphOrdinal": 0,
+        "sourceSelector": "h2",
+        "headingPath": [
+          "On Truth"
+        ]
+      },
+      "metadata": {
+        "characterEnd": 8,
+        "characterStart": 0,
+        "corpusCoreSegmentRevision": "sha256:3d5a103832bef59dffa373ad19d5e22abdb6a5ce12131e44bad3a9fce2d93d11",
+        "spanProducer": "document-search/html-extraction",
+        "spanProducerInputs": [
+          {
+            "id": "representation:dc1992e89cb326eff9a755237d145f0afdf2afa06d539da13362a814da6f449d",
+            "record_type": "representation"
+          }
+        ],
+        "spanProducerVersion": "git:28463de"
+      }
+    },
+    {
+      "id": "segment:c4531ac2e3937d05edd5dd2c2706e26486abcafc2b38b176c9211ab88c2e2870",
+      "sourceId": "asset:834dbe5f424c10c50b519c241bff22d763920ddcca50580a866d31b593c36003",
+      "sequence": 1,
+      "text": "Truth is correspondence ✓.",
+      "contentHash": "sha256:86080d9aaafa982fd63a4ce7905dfdcb14c4a05c1618f2e0fb34f4f1f663754e",
+      "locator": {
+        "kind": "text",
+        "byteStart": 10,
+        "byteEnd": 38,
+        "paragraphOrdinal": 1,
+        "sourceSelector": "p",
+        "headingPath": [
+          "On Truth"
+        ]
+      },
+      "metadata": {
+        "characterEnd": 36,
+        "characterStart": 10,
+        "corpusCoreSegmentRevision": "sha256:455c6528133b45e3a5b34bb1862096fe0293c093f1417b878d68bf88e6c066e7",
+        "spanProducer": "document-search/html-extraction",
+        "spanProducerInputs": [
+          {
+            "id": "representation:dc1992e89cb326eff9a755237d145f0afdf2afa06d539da13362a814da6f449d",
+            "record_type": "representation"
+          }
+        ],
+        "spanProducerVersion": "git:28463de"
+      }
+    }
+  ]
+}

@@ -177,3 +177,32 @@ docker compose up --build api
 ## Notes
 
 The current extractor is deterministic and heuristic. It is designed as a reviewable first pass: generated propositions are marked with `reviewRequired: true`, source fragment ids are preserved, candidate index entries expose score breakdowns, and relation notes explain why each relation was inferred. Exact and normalized-fingerprint duplicates are merged conservatively; semantic near-duplicates are retained as reviewable `variant_of` relations.
+
+## Belief Lab source-reference export
+
+The `philosophy-extractor-exporters::export_belief_evidence` adapter exports the
+source references underlying document interpretation. It accepts validated
+source-span inputs produced by the corpus-core intake with original immutable
+representation/segment receipts. It preserves corpus IDs, native record revisions,
+upstream processor/configuration identity and imported parentage. It does not
+export worldview judgments or reclassify philosophical candidates as source text.
+
+For a deterministic offline example:
+
+```sh
+cargo run -p philosophy-extractor-exporters --example export_belief_sources -- \
+  packages/source-ingestion/tests/fixtures/corpus_core/document-search-batch.jsonl \
+  git:<exact-exporter-source-revision>
+```
+
+Supported inputs are text and web-page assets with text locators and a segment
+receipt referencing the selected representation. Unknown source types, timed
+locators, absent or release-only processor revisions, altered text/hash bindings,
+and unsupported input lineage fail explicitly. Use original transcript/OCR
+producer exports for other modalities. No model download or sibling repository is
+required. The committed fixture and independent Python oracle are described in
+`packages/exporters/tests/fixtures/README.md`.
+
+The export uses `belief_evidence_interchange@1` with `metadata` and `source_text`
+references. A consumer must support the latter class; older consumers fail closed.
+The corresponding Belief Lab consumer integration is tracked in belief-lab#11.
