@@ -473,6 +473,19 @@ pub struct PassageCluster {
     pub confidence: f64,
 }
 
+/// A corpus-core source segment a candidate came from, with its media time span when the
+/// segment has a timed locator. Consumers join candidates to producer-owned segment data, such
+/// as speaker turns, on `segment_id` or on the time span.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceSegmentRef {
+    pub segment_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_seconds: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_seconds: Option<f64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceOffset {
@@ -490,6 +503,8 @@ pub struct ClaimCandidate {
     pub canonical_hint: Option<String>,
     pub source_passage_ids: Vec<String>,
     pub source_offsets: Vec<SourceOffset>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub source_segments: Vec<SourceSegmentRef>,
     pub claim_kind: ClaimKind,
     pub confidence: f64,
     pub requires_review: bool,
@@ -581,6 +596,8 @@ pub struct NormalizedProposition {
     pub canonical_text: String,
     pub source_claim_ids: Vec<String>,
     pub source_passage_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub source_segments: Vec<SourceSegmentRef>,
     pub claim_kind: ClaimKind,
     pub role: ClaimRole,
     pub confidence: f64,
@@ -740,6 +757,8 @@ pub struct PropositionCandidate {
     pub confidence: f64,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub source_fragment_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub source_segments: Vec<SourceSegmentRef>,
     #[serde(default, skip_serializing_if = "Metadata::is_empty")]
     pub metadata: Metadata,
 }
