@@ -1,4 +1,4 @@
-//! Intake of `moenarch_corpus_core_batch` v1 JSONL (document-search's corpus-core export) into the
+//! Intake of `moenarch_corpus_core_batch` v1 JSONL (document-search and youtube-corpus corpus-core exports) into the
 //! source-span interpretation input.
 //!
 //! Corpus identity (sources, assets, representations, segments, hashes, provenance) is
@@ -480,7 +480,7 @@ impl<'a> CorpusIndex<'a> {
                 uri: Some(asset.content.uri.clone()),
                 title: source.metadata.get("title").cloned(),
                 creators: Vec::new(),
-                language: None,
+                language: asset.metadata.get("language").cloned(),
                 content_hash: revision,
                 metadata,
             });
@@ -506,6 +506,8 @@ impl<'a> CorpusIndex<'a> {
                     text,
                     &scalar_offsets,
                     representation,
+                    source,
+                    is_media(&asset.kind),
                 )?);
             }
         }
@@ -532,6 +534,16 @@ fn asset_kind(kind: &corpus_core::AssetKind) -> String {
     }
 }
 
+fn is_media(kind: &corpus_core::AssetKind) -> bool {
+    matches!(
+        kind,
+        corpus_core::AssetKind::Video
+            | corpus_core::AssetKind::Audio
+            | corpus_core::AssetKind::Subtitle
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
 fn map_segment(
     segment: &corpus_core::Segment,
     range: Span,
@@ -540,6 +552,8 @@ fn map_segment(
     text: &str,
     scalar_offsets: &[usize],
     representation: &corpus_core::Representation,
+    source: &corpus_core::Source,
+    media_asset: bool,
 ) -> Result<SourceSpanRecordV1, SourceSpanValidationError> {
     let scalars = scalar_offsets.len() - 1;
     let in_bounds = usize::try_from(range.end).is_ok_and(|end| end <= scalars);
@@ -604,14 +618,34 @@ fn map_segment(
         metadata.insert("pageIndex".to_string(), Value::from(page_index));
     }
 
-    Ok(SourceSpanRecordV1 {
-        id: segment.id.to_string(),
-        source_id: asset_id.to_string(),
-        sequence,
-        content_hash: format!("sha256:{}", ContentHash::from_bytes(span_text.as_bytes())),
-        text: span_text,
-        language: None,
-        locator: SourceLocatorV1::Text {
+    // Media segments (a time range, a transcript, or text read off audio/video/subtitles) keep
+    // their timing; their text position stays available in the byte/character metadata.
+    let time_range = segment.locator.time_range_ms;
+    let locator = if time_range.is_some()
+        || media_asset
+        || representation.kind == RepresentationKind::Transcript
+    {
+        metadata.insert("byteStart".to_string(), Value::from(byte_start));
+        metadata.insert("byteEnd".to_string(), Value::from(byte_end));
+        if let Some(video_id) = source.metadata.get("video_id") {
+            metadata.insert("videoId".to_string(), Value::String(video_id.clone()));
+        }
+        let segment_index = match segment_metadata.get("segment_index") {
+            Some(value) => value.parse::<u64>().map_err(|_| {
+                error(format!(
+                    "segment {} has a non-numeric segment_index {value:?}",
+                    segment.id
+                ))
+            })?,
+            None => sequence,
+        };
+        SourceLocatorV1::Timed {
+            segment_index,
+            start_seconds: time_range.map(|range| range.start as f64 / 1000.0),
+            end_seconds: time_range.map(|range| range.end as f64 / 1000.0),
+        }
+    } else {
+        SourceLocatorV1::Text {
             byte_start,
             byte_end,
             paragraph_ordinal,
@@ -619,7 +653,17 @@ fn map_segment(
             section: None,
             source_selector: segment_metadata.get("source_selector").cloned(),
             heading_path,
-        },
+        }
+    };
+
+    Ok(SourceSpanRecordV1 {
+        id: segment.id.to_string(),
+        source_id: asset_id.to_string(),
+        sequence,
+        content_hash: format!("sha256:{}", ContentHash::from_bytes(span_text.as_bytes())),
+        text: span_text,
+        language: segment_metadata.get("language").cloned(),
+        locator,
         metadata,
     })
 }
