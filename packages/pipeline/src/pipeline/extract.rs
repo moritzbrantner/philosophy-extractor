@@ -43,6 +43,7 @@ fn candidate_for_fragment(fragment: &SourceFragment) -> Option<PropositionCandid
         },
         confidence,
         source_fragment_ids: vec![fragment.id.clone()],
+        source_segments: Vec::new(),
         metadata,
     })
 }

@@ -13,8 +13,8 @@ use crate::model::{
     IngestedDocument, NormalizedProposition, Passage, PassageCluster, PassageEmbedding,
     PhilosophyCorpusInputV1, PipelineDiagnostic, PipelineRun, PipelineRunConfig, PipelineStage,
     PropositionCandidate, RelationCandidate, RelationKind, SourceDocument, SourceFragment,
-    SourceLocatorV1, SourceOffset, SourceSpanExtractionResponse, StageSummary, TermCandidate,
-    TermType, UnifiedWorldviewV10,
+    SourceLocatorV1, SourceOffset, SourceSegmentRef, SourceSpanExtractionResponse, StageSummary,
+    TermCandidate, TermType, UnifiedWorldviewV10,
 };
 use philosophy_extractor_artifact_store::{ArtifactStoreError, FileArtifactStore, artifact_id};
 use philosophy_extractor_model_providers::{
@@ -579,6 +579,7 @@ impl PhilosophyExtractor {
             &self.config,
             &mut diagnostics,
         );
+        add_source_segments(&mut candidates, &input);
         add_media_context(&mut candidates, &input);
         if let Some(max) = self.config.max_propositions {
             candidates.truncate(max);
@@ -701,6 +702,41 @@ fn add_rank_diagnostics(
                 });
             }
         }
+    }
+}
+
+/// Records the corpus-core segments each candidate came from. Corpus-core intake keeps the
+/// segment id as the span id and marks the span with `corpusCoreSegmentRevision`; spans from
+/// other producers carry no segment reference.
+fn add_source_segments(candidates: &mut [PropositionCandidate], input: &PhilosophyCorpusInputV1) {
+    let spans_by_id = input
+        .sources
+        .spans
+        .iter()
+        .map(|span| (span.id.as_str(), span))
+        .collect::<HashMap<_, _>>();
+    for candidate in candidates {
+        candidate.source_segments = candidate
+            .source_fragment_ids
+            .iter()
+            .filter_map(|fragment_id| spans_by_id.get(fragment_id.as_str()))
+            .filter(|span| span.metadata.contains_key("corpusCoreSegmentRevision"))
+            .map(|span| {
+                let (start_seconds, end_seconds) = match span.locator {
+                    SourceLocatorV1::Timed {
+                        start_seconds,
+                        end_seconds,
+                        ..
+                    } => (start_seconds, end_seconds),
+                    SourceLocatorV1::Text { .. } => (None, None),
+                };
+                SourceSegmentRef {
+                    segment_id: span.id.clone(),
+                    start_seconds,
+                    end_seconds,
+                }
+            })
+            .collect();
     }
 }
 
@@ -1132,6 +1168,7 @@ fn claim_candidates_from_propositions(
                 canonical_hint: Some(candidate.canonical_text.clone()),
                 source_passage_ids,
                 source_offsets,
+                source_segments: candidate.source_segments.clone(),
                 claim_kind: candidate.claim_kind,
                 confidence: candidate.confidence,
                 requires_review: true,
@@ -1502,6 +1539,15 @@ fn normalized_propositions(
                         existing.source_passage_ids.push(passage_id.clone());
                     }
                 }
+                for segment in &candidate.source_segments {
+                    if !existing
+                        .source_segments
+                        .iter()
+                        .any(|known| known.segment_id == segment.segment_id)
+                    {
+                        existing.source_segments.push(segment.clone());
+                    }
+                }
                 existing.confidence = existing.confidence.max(candidate.confidence);
             })
             .or_insert_with(|| NormalizedProposition {
@@ -1509,6 +1555,7 @@ fn normalized_propositions(
                 canonical_text: candidate.canonical_text.clone(),
                 source_claim_ids: vec![candidate.id.clone()],
                 source_passage_ids: candidate.source_fragment_ids.clone(),
+                source_segments: candidate.source_segments.clone(),
                 claim_kind: candidate.claim_kind,
                 role: role_by_claim
                     .get(candidate.id.as_str())
