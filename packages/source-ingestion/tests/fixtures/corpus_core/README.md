@@ -25,3 +25,12 @@ document stored before originals were kept, so its asset carries a hash but no p
 Expected values in `tests/corpus_core_intake.rs` were derived independently with Python
 (`hashlib`, scalar slicing, UTF-8 byte offsets, corpus-core's length-delimited id derivation), not
 by running the intake code. Negative cases are built in the test by mutating this fixture.
+
+## youtube-corpus
+
+`youtube-corpus-batch.jsonl` is youtube-corpus's committed expected corpus-core export
+(`tests/fixtures/exports/expected/corpus-core.jsonl` at youtube-corpus commit `bafc7e27465ffb7fd16c2e763234eb623fe04eeb`), copied
+unchanged. Transcript, subtitle, audio and video segments become `timed` locators (seconds from
+`time_range_ms`, `segment_index` from segment metadata) with `videoId`; their text position stays in
+the `byteStart`/`byteEnd`/`characterStart`/`characterEnd` metadata. Checked by
+`tests/youtube_corpus_intake.rs`.
