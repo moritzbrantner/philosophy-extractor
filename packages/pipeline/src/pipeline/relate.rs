@@ -1,15 +1,19 @@
 use crate::model::{ClaimKind, Metadata, PropositionCandidate, RelationCandidate, RelationKind};
 use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use text_embeddings::{HashedTextEmbedder, TextEmbeddingConfig};
 use text_retrieval::{HybridConfig, IngestionOptions, RetrievalIndex, SearchDocument, SearchQuery};
 
 pub fn infer_relations(candidates: &[PropositionCandidate]) -> Vec<RelationCandidate> {
+    let tokens = candidates
+        .iter()
+        .map(|candidate| content_tokens(&candidate.canonical_text))
+        .collect::<Vec<_>>();
     let mut relations = Vec::new();
 
     for (left_index, left) in candidates.iter().enumerate() {
-        for right in candidates.iter().skip(left_index + 1) {
-            let overlap = lexical_overlap(&left.canonical_text, &right.canonical_text);
+        for (right_index, right) in candidates.iter().enumerate().skip(left_index + 1) {
+            let overlap = lexical_overlap(&tokens[left_index], &tokens[right_index]);
             if overlap < 0.28 {
                 continue;
             }
@@ -109,23 +113,29 @@ pub fn rerank_relations_with_text_retrieval(
         .map(|candidate| (candidate.id.as_str(), candidate.canonical_text.as_str()))
         .collect::<BTreeMap<_, _>>();
 
+    // Relations from one proposition issue the same query, so each query only runs once.
+    let mut results_by_query = HashMap::new();
+
     relations
         .into_iter()
         .map(|mut relation| {
             let Some(query_text) = text_by_id.get(relation.from_proposition_id.as_str()) else {
                 return relation;
             };
-            let query = SearchQuery::hybrid(
-                *query_text,
-                candidates.len().min(8),
-                HybridConfig {
-                    semantic_weight: 0.75,
-                    lexical_weight: 0.25,
-                    rerank_window: candidates.len().min(16).max(1),
-                    rerank: false,
-                },
-            );
-            if let Ok(results) = index.search(&query)
+            let results = results_by_query.entry(*query_text).or_insert_with(|| {
+                let query = SearchQuery::hybrid(
+                    *query_text,
+                    candidates.len().min(8),
+                    HybridConfig {
+                        semantic_weight: 0.75,
+                        lexical_weight: 0.25,
+                        rerank_window: candidates.len().min(16).max(1),
+                        rerank: false,
+                    },
+                );
+                index.search(&query)
+            });
+            if let Ok(results) = results
                 && let Some(result) = results
                     .iter()
                     .find(|result| result.document_id == relation.to_proposition_id)
@@ -183,16 +193,14 @@ fn metadata_bool(candidate: &PropositionCandidate, key: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn lexical_overlap(left: &str, right: &str) -> f64 {
-    let left_tokens = content_tokens(left);
-    let right_tokens = content_tokens(right);
+fn lexical_overlap(left_tokens: &BTreeSet<String>, right_tokens: &BTreeSet<String>) -> f64 {
     if left_tokens.is_empty() || right_tokens.is_empty() {
         return 0.0;
     }
 
-    let intersection = left_tokens.intersection(&right_tokens).count() as f64;
-    let union = left_tokens.union(&right_tokens).count() as f64;
-    intersection / union
+    let intersection = left_tokens.intersection(right_tokens).count();
+    let union = left_tokens.len() + right_tokens.len() - intersection;
+    intersection as f64 / union as f64
 }
 
 fn content_tokens(value: &str) -> BTreeSet<String> {

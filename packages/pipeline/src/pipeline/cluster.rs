@@ -15,12 +15,30 @@ pub fn cluster_passages(
         .map(|(index, passage)| (passage.id.as_str(), index))
         .collect::<HashMap<_, _>>();
 
+    let passage_indices = embeddings
+        .iter()
+        .map(|embedding| index_by_id.get(embedding.passage_id.as_str()).copied())
+        .collect::<Vec<_>>();
+    let norms = embeddings
+        .iter()
+        .map(|embedding| norm(&embedding.vector))
+        .collect::<Vec<_>>();
+
     for (left_index, left) in embeddings.iter().enumerate() {
-        for right in embeddings.iter().skip(left_index + 1) {
-            let Some(&right_index) = index_by_id.get(right.passage_id.as_str()) else {
+        for (offset, right) in embeddings.iter().enumerate().skip(left_index + 1) {
+            let Some(right_index) = passage_indices[offset] else {
                 continue;
             };
-            let similarity = cosine(&left.vector, &right.vector);
+            // Joining an already joined pair changes nothing, so its similarity is not needed.
+            if union_find.find(left_index) == union_find.find(right_index) {
+                continue;
+            }
+            let similarity = cosine(
+                &left.vector,
+                &right.vector,
+                norms[left_index],
+                norms[offset],
+            );
             let same_paragraph =
                 passages[left_index].paragraph_index == passages[right_index].paragraph_index;
             if similarity >= 0.74 || (same_paragraph && similarity >= 0.58) {
@@ -57,7 +75,15 @@ pub fn cluster_passages(
         .collect()
 }
 
-fn cosine(left: &[f32], right: &[f32]) -> f64 {
+fn norm(vector: &[f32]) -> f64 {
+    vector
+        .iter()
+        .map(|value| f64::from(*value) * f64::from(*value))
+        .sum::<f64>()
+        .sqrt()
+}
+
+fn cosine(left: &[f32], right: &[f32], left_norm: f64, right_norm: f64) -> f64 {
     if left.is_empty() || right.is_empty() || left.len() != right.len() {
         return 0.0;
     }
@@ -66,16 +92,6 @@ fn cosine(left: &[f32], right: &[f32]) -> f64 {
         .zip(right)
         .map(|(left, right)| f64::from(*left) * f64::from(*right))
         .sum::<f64>();
-    let left_norm = left
-        .iter()
-        .map(|value| f64::from(*value) * f64::from(*value))
-        .sum::<f64>()
-        .sqrt();
-    let right_norm = right
-        .iter()
-        .map(|value| f64::from(*value) * f64::from(*value))
-        .sum::<f64>()
-        .sqrt();
     if left_norm == 0.0 || right_norm == 0.0 {
         0.0
     } else {
