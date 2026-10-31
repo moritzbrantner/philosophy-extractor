@@ -11,9 +11,14 @@ use super::extract::{has_negation, philosophical_domain};
 const VARIANT_LEXICAL_THRESHOLD: f64 = 0.72;
 
 pub fn normalized_fingerprint(text: &str) -> String {
-    content_tokens(text)
-        .into_iter()
-        .filter(|token| !FINGERPRINT_STOPWORDS.contains(&token.as_str()))
+    fingerprint_from_tokens(&content_tokens(text))
+}
+
+fn fingerprint_from_tokens(tokens: &BTreeSet<String>) -> String {
+    tokens
+        .iter()
+        .map(String::as_str)
+        .filter(|token| !FINGERPRINT_STOPWORDS.contains(token))
         .collect::<Vec<_>>()
         .join(" ")
 }
@@ -161,13 +166,19 @@ pub fn conservative_deduplicate(
     diagnostics: &mut Vec<PipelineDiagnostic>,
 ) -> Vec<PropositionCandidate> {
     let mut merged = Vec::<PropositionCandidate>::new();
+    // Merging never changes a kept candidate's text or kind, so its features stay valid.
+    let mut merged_features = Vec::<(String, bool)>::new();
     for candidate in candidates {
-        let duplicate_index = merged.iter().position(|existing| {
-            existing.canonical_text == candidate.canonical_text
-                || (normalized_fingerprint(&existing.canonical_text)
-                    == normalized_fingerprint(&candidate.canonical_text)
-                    && compatible_for_merge(existing, &candidate))
-        });
+        let fingerprint = normalized_fingerprint(&candidate.canonical_text);
+        let negated = has_negation(&candidate.canonical_text);
+        let duplicate_index = merged.iter().zip(&merged_features).position(
+            |(existing, (existing_fingerprint, existing_negated))| {
+                existing.canonical_text == candidate.canonical_text
+                    || (*existing_fingerprint == fingerprint
+                        && existing.claim_kind == candidate.claim_kind
+                        && *existing_negated == negated)
+            },
+        );
 
         if let Some(index) = duplicate_index {
             let is_fingerprint_duplicate = merged[index].canonical_text != candidate.canonical_text;
@@ -188,18 +199,24 @@ pub fn conservative_deduplicate(
         }
 
         merged.push(candidate);
+        merged_features.push((fingerprint, negated));
     }
     merged
 }
 
 pub fn infer_variant_relations(candidates: &[PropositionCandidate]) -> Vec<RelationCandidate> {
+    let features = candidates
+        .iter()
+        .map(VariantFeatures::of)
+        .collect::<Vec<_>>();
     let mut relations = Vec::new();
     for (left_index, left) in candidates.iter().enumerate() {
-        for right in candidates.iter().skip(left_index + 1) {
-            if !compatible_for_variant(left, right) {
+        for (right_index, right) in candidates.iter().enumerate().skip(left_index + 1) {
+            let (left_features, right_features) = (&features[left_index], &features[right_index]);
+            if !compatible_for_variant(left, right, left_features, right_features) {
                 continue;
             }
-            let overlap = lexical_overlap(&left.canonical_text, &right.canonical_text);
+            let overlap = lexical_overlap(&left_features.tokens, &right_features.tokens);
             if overlap < VARIANT_LEXICAL_THRESHOLD {
                 continue;
             }
@@ -303,17 +320,34 @@ fn merge_candidate(existing: &mut PropositionCandidate, candidate: PropositionCa
     );
 }
 
-fn compatible_for_merge(left: &PropositionCandidate, right: &PropositionCandidate) -> bool {
-    left.claim_kind == right.claim_kind
-        && has_negation(&left.canonical_text) == has_negation(&right.canonical_text)
+/// Text-derived values compared across every candidate pair, computed once per candidate.
+struct VariantFeatures {
+    negated: bool,
+    fingerprint: String,
+    tokens: BTreeSet<String>,
 }
 
-fn compatible_for_variant(left: &PropositionCandidate, right: &PropositionCandidate) -> bool {
+impl VariantFeatures {
+    fn of(candidate: &PropositionCandidate) -> Self {
+        let tokens = content_tokens(&candidate.canonical_text);
+        Self {
+            negated: has_negation(&candidate.canonical_text),
+            fingerprint: fingerprint_from_tokens(&tokens),
+            tokens,
+        }
+    }
+}
+
+fn compatible_for_variant(
+    left: &PropositionCandidate,
+    right: &PropositionCandidate,
+    left_features: &VariantFeatures,
+    right_features: &VariantFeatures,
+) -> bool {
     left.id != right.id
-        && has_negation(&left.canonical_text) == has_negation(&right.canonical_text)
+        && left_features.negated == right_features.negated
         && compatible_claim_kind(left.claim_kind, right.claim_kind)
-        && normalized_fingerprint(&left.canonical_text)
-            != normalized_fingerprint(&right.canonical_text)
+        && left_features.fingerprint != right_features.fingerprint
 }
 
 fn compatible_claim_kind(left: ClaimKind, right: ClaimKind) -> bool {
@@ -540,15 +574,13 @@ fn variant_relation(
     }
 }
 
-fn lexical_overlap(left: &str, right: &str) -> f64 {
-    let left_tokens = content_tokens(left);
-    let right_tokens = content_tokens(right);
+fn lexical_overlap(left_tokens: &BTreeSet<String>, right_tokens: &BTreeSet<String>) -> f64 {
     if left_tokens.is_empty() || right_tokens.is_empty() {
         return 0.0;
     }
-    let intersection = left_tokens.intersection(&right_tokens).count() as f64;
-    let union = left_tokens.union(&right_tokens).count() as f64;
-    intersection / union
+    let intersection = left_tokens.intersection(right_tokens).count();
+    let union = left_tokens.len() + right_tokens.len() - intersection;
+    intersection as f64 / union as f64
 }
 
 fn content_tokens(value: &str) -> BTreeSet<String> {
