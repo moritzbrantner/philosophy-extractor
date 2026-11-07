@@ -18,14 +18,14 @@ edition = "2024"
 
 [workspace.dependencies]
 clap = { version = "4.6.1", features = ["derive"] }
-corpus-core = { package = "moenarch-corpus-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9" }
+corpus-core = { package = "moenarch-corpus-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "779e7badda422f380edceff855036bf16876b702" }
 philosophy-extractor = { path = "packages/pipeline" }
 philosophy-extractor-schema = { path = "packages/schema" }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 sha2 = "0.10.9"
-text-core = { package = "moenarch-text-core", git = "https://github.com/moritzbrantner/nlp-stack", rev = "057689ca1df031d677f4afd9d65eed181c6fca06" }
-text-embeddings = { package = "moenarch-text-embeddings", git = "https://github.com/moritzbrantner/nlp-stack", rev = "057689ca1df031d677f4afd9d65eed181c6fca06" }
-text-linguistics = { package = "moenarch-text-linguistics", git = "https://github.com/moritzbrantner/nlp-stack", rev = "057689ca1df031d677f4afd9d65eed181c6fca06" }
-text-retrieval = { package = "moenarch-text-retrieval", git = "https://github.com/moritzbrantner/nlp-stack", rev = "057689ca1df031d677f4afd9d65eed181c6fca06" }
+text-core = { package = "moenarch-text-core", git = "https://github.com/moritzbrantner/nlp-stack", rev = "34717dfbfeff3af894d964ecb1697b7bd2df841c" }
+text-embeddings = { package = "moenarch-text-embeddings", git = "https://github.com/moritzbrantner/nlp-stack", rev = "34717dfbfeff3af894d964ecb1697b7bd2df841c" }
+text-linguistics = { package = "moenarch-text-linguistics", git = "https://github.com/moritzbrantner/nlp-stack", rev = "34717dfbfeff3af894d964ecb1697b7bd2df841c" }
+text-retrieval = { package = "moenarch-text-retrieval", git = "https://github.com/moritzbrantner/nlp-stack", rev = "34717dfbfeff3af894d964ecb1697b7bd2df841c" }
 thiserror = "2.0.17"
