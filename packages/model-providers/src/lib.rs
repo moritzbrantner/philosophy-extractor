@@ -486,7 +486,18 @@ fn hash_embedding(text: &str, dimensions: usize) -> Vec<f32> {
 fn digest_text(value: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(value.as_bytes());
-    format!("{:x}", hasher.finalize())
+    lower_hex(&hasher.finalize())
+}
+
+/// Lowercase hex of a digest; independent of the digest crate's output array type.
+fn lower_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut out, byte| {
+            let _ = write!(out, "{byte:02x}");
+            out
+        })
 }
 
 #[cfg(test)]
