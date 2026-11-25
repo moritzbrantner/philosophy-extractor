@@ -32,7 +32,18 @@ fn immutable(field: &str, value: &str) -> Result<(), ReferenceExportError> {
 }
 
 fn hash(bytes: &[u8]) -> String {
-    format!("sha256:{:x}", Sha256::digest(bytes))
+    format!("sha256:{}", lower_hex(&Sha256::digest(bytes)))
+}
+
+/// Lowercase hex of a digest; independent of the digest crate's output array type.
+fn lower_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut out, byte| {
+            let _ = write!(out, "{byte:02x}");
+            out
+        })
 }
 
 fn json_hash(value: &Value) -> Result<String, ReferenceExportError> {
